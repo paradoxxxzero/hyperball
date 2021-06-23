@@ -1,4 +1,5 @@
 import Stats from './_snowpack/pkg/statsjs.js'
+import interact from './_snowpack/pkg/interactjs.js'
 import { parse } from './_snowpack/pkg/qs.js'
 
 const canvas = document.createElement('canvas')
@@ -78,11 +79,20 @@ const hyperbolicTranslate = (vertex, offset, s = 1) => {
 }
 
 const hyperbolicRotate = (vertex, theta) => {
+  // Rotation is an isometry in HH
   const [x, y] = vertex
   const c = Math.cos(theta)
   const s = Math.sin(theta)
   vertex[0] = x * c - y * s
   vertex[1] = x * s + y * c
+}
+
+const hyperbolicScale = (vertex, scale, s = 1) => {
+  // Trying Einstein scalar multiplication but this seems wrong
+  const [x, y] = vertex
+  const norm = Math.sqrt(x * x + y * y)
+  vertex[0] = s * Math.tanh(scale * Math.atanh(norm / s)) * (x / norm)
+  vertex[1] = s * Math.tanh(scale * Math.atanh(norm / s)) * (y / norm)
 }
 
 const getPolygon = () => {
@@ -160,11 +170,21 @@ const translate = offset => {
   }
 }
 
-const rotate = ([theta]) => {
+const rotate = theta => {
   for (let i = 0; i < polygons.length; i++) {
     const vertices = polygons[i]
     for (let j = 0; j < vertices.length; j++) {
       hyperbolicRotate(vertices[j], theta)
+    }
+  }
+}
+
+const scale = scale => {
+  const s = 1
+  for (let i = 0; i < polygons.length; i++) {
+    const vertices = polygons[i]
+    for (let j = 0; j < vertices.length; j++) {
+      hyperbolicScale(vertices[j], scale)
     }
   }
 }
@@ -209,32 +229,27 @@ const render = () => {
 generatePolygons()
 resize()
 
-let origin
-let type = null
-
-window.onmousedown = e => {
-  origin = [e.pageX, e.pageY]
-  type = e.button === 1 ? 'rotation' : 'translation'
-}
-
-window.onmousemove = e => {
-  if (!type) {
-    return
-  }
-  const offset = [(e.pageX - origin[0]) / r, (origin[1] - e.pageY) / r]
-  origin = [e.pageX, e.pageY]
-  if (type === 'translation') {
-    translate(offset)
-  }
-  if (type === 'rotation') {
-    rotate(offset)
-  }
-
-  render()
-}
-
-window.onmouseup = e => {
-  type = null
-}
+interact('canvas')
+  .draggable({
+    listeners: {
+      move: e => {
+        if (e.ctrlKey) {
+          rotate(e.dx / r)
+        } else if (e.shiftKey) {
+          scale(1 + e.dy / r)
+        } else {
+          translate([e.dx / r, -e.dy / r])
+        }
+        render()
+      },
+    },
+  })
+  .gesturable({
+    onmove: e => {
+      rotate(-(Math.PI * e.da) / 180)
+      scale(1 + e.ds)
+      render()
+    },
+  })
 
 window.ondeviceorientation = window.onresize = resize

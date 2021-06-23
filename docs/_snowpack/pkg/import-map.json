@@ -1,5 +1,6 @@
 {
   "imports": {
+    "interactjs": "./interactjs.js",
     "qs": "./qs.js",
     "stats.js": "./statsjs.js"
   }

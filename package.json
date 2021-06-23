@@ -11,6 +11,7 @@
     "snowpack": "^3.3.7"
   },
   "dependencies": {
+    "interactjs": "^1.10.11",
     "qs": "^6.10.1",
     "stats.js": "^0.17.0"
   }
