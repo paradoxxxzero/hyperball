@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "qs": "./qs.js",
+    "stats.js": "./statsjs.js"
+  }
+}

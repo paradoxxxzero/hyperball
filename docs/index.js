@@ -1,5 +1,5 @@
-import Stats from 'stats.js'
-import { parse } from 'qs'
+import Stats from './_snowpack/pkg/statsjs.js'
+import { parse } from './_snowpack/pkg/qs.js'
 
 const canvas = document.createElement('canvas')
 document.body.appendChild(canvas)

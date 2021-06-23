@@ -1,4 +1,3 @@
-/** @type {import("snowpack").SnowpackUserConfig } */
 export default {
   mount: {
     /* ... */
@@ -19,8 +18,10 @@ export default {
   },
   devOptions: {
     /* ... */
+    port: 37373,
   },
   buildOptions: {
     /* ... */
+    out: 'docs',
   },
-};
+}
