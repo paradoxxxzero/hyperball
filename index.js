@@ -18,20 +18,20 @@ const resize = () => {
   render()
 }
 
-const range = n => new Array(n).fill().map((_, i) => i)
-
 const {
   p = 5,
   q = 5,
   limit = 10000,
   colored = false,
+  stats = false,
+  type = 'fill',
 } = parse(location.search, { ignoreQueryPrefix: true })
 
-const stats = new Stats()
-document.body.appendChild(stats.dom)
+const statsPanel = stats !== false && new Stats()
+statsPanel && document.body.appendChild(statsPanel.dom)
 
 const toDisk = ([x, y]) => [w2 + x * r, h2 - y * r]
-const fromDisk = ([x, y]) => [(x - w2) / r, (h2 - y) / r]
+// const fromDisk = ([x, y]) => [(x - w2) / r, (h2 - y) / r]
 
 const getControl = (x1, y1, x2, y2) => {
   // https://sunsite.ubc.ca/~cass/research/pdf/NE.pdf
@@ -71,12 +71,13 @@ const hyperbolicTranslate = (vertex, offset, s = 1) => {
 
   const invs2 = 1 / (s * s)
 
-  const u = 1 + (2 * ab + bb)
-  const v = 1 - invs2 * aa
   const w = 1 / (1 + 2 * invs2 * ab + invs2 * invs2 * aa * bb)
 
-  vertex[0] = (xa * u + xb * v) * w
-  vertex[1] = (ya * u + yb * v) * w
+  const u = (1 + (2 * ab + bb)) * w
+  const v = (1 - invs2 * aa) * w
+
+  vertex[0] = xa * u + xb * v
+  vertex[1] = ya * u + yb * v
 }
 
 const hyperbolicRotate = (vertex, theta) => {
@@ -174,10 +175,11 @@ const generatePolygons = () => {
 }
 
 const translate = offset => {
+  const translation = offset.map(c => Math.max(Math.min(c, 0.99), -0.99))
   for (let i = 0; i < polygons.length; i++) {
     const vertices = polygons[i]
     for (let j = 0; j < vertices.length; j++) {
-      hyperbolicTranslate(vertices[j], offset)
+      hyperbolicTranslate(vertices[j], translation)
     }
   }
 }
@@ -204,15 +206,15 @@ const scale = (scale, type = 'einstein') => {
 }
 
 const render = () => {
-  stats.begin()
+  statsPanel && statsPanel.begin()
 
   // ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, width, height)
 
-  ctx.fillStyle = 'white'
+  ctx[`${type}Style`] = 'white'
   for (var i = 0, l = polygons.length; i < l; i++) {
-    colored !== false && (ctx.fillStyle = `hsl(${i}deg, 50%, 60%)`)
+    colored !== false && (ctx[`${type}Style`] = `hsl(${i}deg, 50%, 60%)`)
     const vertices = polygons[i]
     ctx.beginPath()
 
@@ -235,10 +237,9 @@ const render = () => {
       }
     }
 
-    ctx.fill()
-    // ctx.stroke()
+    ctx[type]()
   }
-  stats.end()
+  statsPanel && statsPanel.end()
 }
 generatePolygons()
 resize()
@@ -248,7 +249,7 @@ interact('canvas')
     listeners: {
       move: e => {
         if (e.ctrlKey) {
-          rotate(e.dx / r)
+          rotate(-e.dx / r)
         } else if (e.shiftKey || e.altKey) {
           scale(1 + e.dy / r, e.altKey ? 'ungar' : 'einstein')
         } else {
@@ -265,7 +266,7 @@ interact('canvas')
       render()
     },
   })
-  .on('doubletap', function (event) {
+  .on('doubletap', () => {
     generatePolygons()
     render()
   })
