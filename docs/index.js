@@ -60,6 +60,7 @@ const getControl = (x1, y1, x2, y2) => {
 
 const hyperbolicTranslate = (vertex, offset, s = 1) => {
   // https://www.researchgate.net/publication/268710591_Gyrovector_spaces_and_their_differential_geometry
+  // Mobius addition
   // u (+) v = ((1 + 2/s² u . v + 1 / s² ||v||²) u + (1 - 1 / s² ||u||²) v) / (1 + 2/s² u . v + 1 / s⁴ ||u||² ||v||²)
   const [xa, ya] = offset
   const [xb, yb] = vertex
@@ -79,7 +80,7 @@ const hyperbolicTranslate = (vertex, offset, s = 1) => {
 }
 
 const hyperbolicRotate = (vertex, theta) => {
-  // Rotation is an isometry in HH
+  // Rotation is the same as in euclidean space
   const [x, y] = vertex
   const c = Math.cos(theta)
   const s = Math.sin(theta)
@@ -87,12 +88,23 @@ const hyperbolicRotate = (vertex, theta) => {
   vertex[1] = x * s + y * c
 }
 
-const hyperbolicScale = (vertex, scale, s = 1) => {
-  // Trying Einstein scalar multiplication but this seems wrong
+const hyperbolicEinsteinScale = (vertex, scale, s = 1) => {
+  // Einstein scalar multiplication
+  // s * tanh(r * atanh(||v|| / s)) * v / ||v||
   const [x, y] = vertex
   const norm = Math.sqrt(x * x + y * y)
-  vertex[0] = s * Math.tanh(scale * Math.atanh(norm / s)) * (x / norm)
-  vertex[1] = s * Math.tanh(scale * Math.atanh(norm / s)) * (y / norm)
+  const fact = s * Math.tanh(scale * Math.atanh(norm / s))
+  vertex[0] = fact * (x / norm)
+  vertex[1] = fact * (y / norm)
+}
+const hyperbolicUngarScale = (vertex, scale, s = 1) => {
+  // Ungar scalar multiplication
+  // s * sinh(r * asinh(||v|| / s)) * v / ||v||
+  const [x, y] = vertex
+  const norm = Math.sqrt(x * x + y * y)
+  const fact = s * Math.sinh(scale * Math.asinh(norm / s))
+  vertex[0] = fact * (x / norm)
+  vertex[1] = fact * (y / norm)
 }
 
 const getPolygon = () => {
@@ -179,12 +191,14 @@ const rotate = theta => {
   }
 }
 
-const scale = scale => {
-  const s = 1
+const scale = (scale, type = 'einstein') => {
   for (let i = 0; i < polygons.length; i++) {
     const vertices = polygons[i]
     for (let j = 0; j < vertices.length; j++) {
-      hyperbolicScale(vertices[j], scale)
+      ;(type === 'einstein' ? hyperbolicEinsteinScale : hyperbolicUngarScale)(
+        vertices[j],
+        scale
+      )
     }
   }
 }
@@ -235,8 +249,8 @@ interact('canvas')
       move: e => {
         if (e.ctrlKey) {
           rotate(e.dx / r)
-        } else if (e.shiftKey) {
-          scale(1 + e.dy / r)
+        } else if (e.shiftKey || e.altKey) {
+          scale(1 + e.dy / r, e.altKey ? 'ungar' : 'einstein')
         } else {
           translate([e.dx / r, -e.dy / r])
         }
@@ -250,6 +264,10 @@ interact('canvas')
       scale(1 + e.ds)
       render()
     },
+  })
+  .on('doubletap', function (event) {
+    generatePolygons()
+    render()
   })
 
 window.ondeviceorientation = window.onresize = resize
