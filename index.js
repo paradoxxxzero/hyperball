@@ -23,6 +23,7 @@ const {
   p = 5,
   q = 5,
   limit = 10000,
+  colored = false,
 } = parse(location.search, { ignoreQueryPrefix: true })
 
 const stats = new Stats()
@@ -177,7 +178,7 @@ const render = () => {
 
   ctx.fillStyle = 'white'
   for (var i = 0, l = polygons.length; i < l; i++) {
-    // ctx.fillStyle = `hsl(${i}deg, 50%, 60%)`
+    colored !== false && (ctx.fillStyle = `hsl(${i}deg, 50%, 60%)`)
     const vertices = polygons[i]
     ctx.beginPath()
 
