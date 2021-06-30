@@ -1,10 +1,12 @@
 import Stats from 'stats.js'
 import interact from 'interactjs'
-import { parse } from 'qs'
+import presets from './presets'
+import { GUI } from 'dat.gui'
 
 const canvas = document.createElement('canvas')
 const ctx = canvas.getContext('2d')
 
+// Globals
 let radius,
   width,
   height,
@@ -13,59 +15,27 @@ let radius,
   polygons = [],
   triangles = [],
   translations = [],
-  generating = false
+  generating = false,
+  tokens = {},
+  tokenSize,
+  _pqr,
+  queueTimeout,
+  reverting,
+  stop = false
 
-const {
-  p = 5,
-  q = 4,
-  r = 2,
-  layers = 20,
-  maxPolys = 1000,
-  colored = 37,
-  stats = false,
-  fill = 'colored',
-  stroke = false,
-  straight = false,
-  wedges = false,
-  tokenPrecision = 2,
-  curvePrecision = 10,
-  projection = 'poincare',
-  a = 1,
-} = Object.fromEntries(
-  Object.entries(parse(location.search, { ignoreQueryPrefix: true })).map(
-    ([k, v]) => [
-      k,
-      [
-        'p',
-        'q',
-        'r',
-        'maxPolys',
-        'layers',
-        'colored',
-        'tokenPrecision',
-        'curvePrecision',
-      ].includes(k)
-        ? +v
-        : ['stats', 'straight'].includes(k)
-        ? v !== false
-        : ['fill', 'stroke', 'wedges'].includes(k)
-        ? v === ''
-          ? {
-              stroke: 'rgba(255, 255, 255, .2)',
-              fill: 'blue',
-              wedges: 'rgba(0, 0, 0, .2)',
-            }[k]
-          : v
-        : v,
-    ]
-  )
-)
-let curve = !straight && projection !== 'klein'
-let limit = maxPolys
+const getPreset = () =>
+  decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
+const preset = getPreset()
+const settings = {
+  ...(presets.remembered[preset] || presets.remembered[presets.preset])[0],
+}
+tokenSize = 10 ** settings.tokenPrecision
+const FILL_COLOR_TYPES = ['none', 'plain', 'odd', 'colored']
+const STROKE_COLOR_TYPES = ['none', 'plain', 'colored']
 
-const size = () => {
+const size = force => {
   ;({ width, height } = document.body.getBoundingClientRect())
-  if (canvas.width === width && canvas.height === height) {
+  if (!force && canvas.width === width && canvas.height === height) {
     return
   }
   canvas.width = width
@@ -74,22 +44,22 @@ const size = () => {
   h2 = height / 2
   const s2 = Math.min(w2, h2)
   radius = {
-    inv: 0.3 * s2,
+    inverted: 0.3 * s2,
     poincare: 0.9 * s2,
     klein: 0.9 * s2,
     band: 0.102 * h2,
     half: 0.102 * h2,
     ortho: 0.3 * s2,
-  }[projection]
+  }[settings.projection]
 
-  if (projection === 'half') {
+  if (settings.projection === 'half') {
     h2 = height
   }
   render()
 }
 
-const statsPanel = stats && new Stats()
-statsPanel && document.body.appendChild(statsPanel.dom)
+const stats = new Stats()
+const showStats = { showStats: false }
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
@@ -110,7 +80,7 @@ const orthoFromHyperboloid = ([x, y, z]) => {
   return [x, y]
 }
 
-const invFromHyperboloid = ([x, y, z]) => {
+const invertedFromHyperboloid = ([x, y, z]) => {
   // z / z.z
   const [X, Y] = poinCareFromHyperboloid([x, y, z])
   const nr = 1 / (X * X + Y * Y)
@@ -138,14 +108,16 @@ const halfFromHyperboloid = ([x, y, z]) => {
   return [2 * X * k, (X2 + Y1 * (Y + 1)) * k]
 }
 
-const fromHyperboloid = {
+const projections = {
   poincare: poinCareFromHyperboloid,
   klein: kleinFromHyperboloid,
-  inv: invFromHyperboloid,
+  inverted: invertedFromHyperboloid,
   band: bandFromHyperboloid,
   half: halfFromHyperboloid,
   ortho: orthoFromHyperboloid,
-}[projection]
+}
+
+const fromHyperboloid = p => projections[settings.projection](p)
 
 const normalize = ([x, y, z]) => {
   const s = z < 0 ? -1 : 1
@@ -174,10 +146,10 @@ const reflect = (point, reflector) => {
   return [x - k * a, y - k * b, z - k * c]
 }
 
-const getRootTriangle = (p, q, r) => {
-  const pAngle = Math.PI / p
-  const qAngle = Math.PI / q
-  const rAngle = Math.PI / r
+const getRootTriangle = () => {
+  const pAngle = Math.PI / settings.p
+  const qAngle = Math.PI / settings.q
+  const rAngle = Math.PI / settings.r
 
   const a =
     (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
@@ -191,17 +163,24 @@ const getRootTriangle = (p, q, r) => {
   ]
 }
 
-const fact = 10 ** tokenPrecision
-const tokens = {}
 const getToken = edges => {
   let str = []
   for (let i = 0; i < 3; i++) {
     str.push(
-      String(~~Math.round(fact * edges[i][0])).padStart(tokenPrecision, '0') +
+      String(~~Math.round(tokenSize * edges[i][0])).padStart(
+        settings.tokenPrecision,
+        '0'
+      ) +
         '|' +
-        String(~~Math.round(fact * edges[i][1])).padStart(tokenPrecision, '0') +
+        String(~~Math.round(tokenSize * edges[i][1])).padStart(
+          settings.tokenPrecision,
+          '0'
+        ) +
         '|' +
-        String(~~Math.round(fact * edges[i][2])).padStart(tokenPrecision, '0')
+        String(~~Math.round(tokenSize * edges[i][2])).padStart(
+          settings.tokenPrecision,
+          '0'
+        )
     )
   }
   return str.sort().join('/')
@@ -222,7 +201,10 @@ const reflectOn = (edges, i) => {
   return true
 }
 
-const getTriangles = (edges, p, order) => {
+const getTriangles = (edges, order) => {
+  if (stop) {
+    return
+  }
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
@@ -238,7 +220,7 @@ const getTriangles = (edges, p, order) => {
   triangles[order].push([...edges])
 
   const center = invertTriangle(edges)[1]
-  for (let n = 0; n < p * 2 - 1; n++) {
+  for (let n = 0; n < settings.p * 2 - 1; n++) {
     if (reflectOn(edges, 1 + (n % 2))) {
       vertices.push(invertTriangle(edges)[((n + 1) % 2) * 2])
       triangles[order].push([...edges])
@@ -255,7 +237,8 @@ const getTriangles = (edges, p, order) => {
   const polygon = {
     vertices,
     center,
-    color: `hsla(${order * colored}deg, 50%, 60%, ${a})`,
+    color: `hsl(${order * settings.coloredShift}deg, 50%, 60%)`,
+    order,
   }
   renderPolygon(polygon)
   polygons[order].push(polygon)
@@ -322,7 +305,7 @@ const invertTriangle = points => {
 const translate = offset => {
   const translation = [
     ...offset,
-    Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + 1),
+    1, //Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + 1),
   ]
   translations.push(translation)
   for (let o = 0; o < polygons.length; o++) {
@@ -364,14 +347,15 @@ const scale = scale => {
 }
 
 const line = (u, v) => {
+  const curve = !settings.straight && settings.projection !== 'klein'
   const pu = toDisk(fromHyperboloid(u))
   const pv = toDisk(fromHyperboloid(v))
   const realDist =
     curve && Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
-  if (curve && realDist > curvePrecision) {
+  if (curve && realDist > 20 - settings.curvePrecision) {
     const ab = u[0] * v[0] + u[1] * v[1] - u[2] * v[2]
     const t2s = t => ab * t + Math.sqrt(t * t * (ab * ab - 1) + 1)
-    let curveStep = curvePrecision / realDist
+    let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / realDist)
     for (let t = 1 - curveStep; t > 0; t -= curveStep) {
       const s = t2s(t)
       const T = [
@@ -387,35 +371,49 @@ const line = (u, v) => {
   ctx.lineTo(pv[0], pv[1])
 }
 
-const renderPolygon = ({ vertices, color, center }) => {
-  const polyVertices = []
-  for (let i = 0; i < p; i++) {
-    polyVertices.push(vertices[(i * 2 + 1) % vertices.length])
-  }
-  renderVertices(polyVertices, color)
-  if (wedges) {
-    for (let i = 0; i < p; i++) {
-      renderVertices(
-        [
-          center,
-          vertices[(i * 2) % vertices.length],
-          vertices[(i * 2 + 1) % vertices.length],
-        ],
-        wedges
-      )
-    }
-  }
-}
-
-const renderVertices = (vertices, color) => {
-  if (fill === 'colored') {
+const renderPolygon = ({ vertices, color, center, order }) => {
+  if (vertices.length < 3) return
+  if (settings.fill === 'colored') {
     ctx.fillStyle = color
+  } else if (settings.fill === 'odd') {
+    ctx.fillStyle =
+      order % 2 === 0 ? settings.fillColor : settings.fillColorEven
   }
-  if (stroke === 'colored') {
+  if (settings.stroke === 'colored') {
     ctx.strokeStyle = color
   }
 
+  let polyVertices = []
+  if (settings.r === 2) {
+    // Optimization
+    for (let i = 0; i < settings.p; i++) {
+      polyVertices.push(vertices[(i * 2 + 1) % vertices.length])
+    }
+  } else {
+    polyVertices = vertices
+  }
+  renderVertices(polyVertices, color)
+
+  if (settings.wedges) {
+    ctx.globalAlpha = settings.wedgesAlpha / 100
+    ctx.save()
+    ctx.fillStyle = settings.wedgesColor
+    ctx.strokeStyle = settings.wedgesColor
+    for (let i = 0; i < settings.p; i++) {
+      renderVertices([
+        center,
+        vertices[(i * 2) % vertices.length],
+        vertices[(i * 2 + 1) % vertices.length],
+      ])
+    }
+    ctx.restore()
+    ctx.globalAlpha = 1
+  }
+}
+
+const renderVertices = vertices => {
   ctx.beginPath()
+
   const p0 = toDisk(fromHyperboloid(vertices[0]))
   ctx.moveTo(p0[0], p0[1])
 
@@ -423,8 +421,8 @@ const renderVertices = (vertices, color) => {
     line(vertices[j], vertices[(j + 1) % vertices.length])
   }
 
-  fill && ctx.fill()
-  stroke && ctx.stroke()
+  settings.fill === 'none' || ctx.fill()
+  settings.stroke === 'none' || ctx.stroke()
 }
 
 const renderPolygons = polygons => {
@@ -433,7 +431,7 @@ const renderPolygons = polygons => {
   }
 }
 
-const asynced = f =>
+const asynced = (f, timeout) =>
   new Promise(resolve =>
     setTimeout(() => {
       resolve(f())
@@ -444,53 +442,72 @@ const nextLayer = () => {
   const order = polygons.length
   const edgeses = triangles[order - 1]
   return Promise.all(
-    edgeses.map(edges => asynced(() => getTriangles(edges, p, order)))
+    edgeses.map(edges => asynced(() => getTriangles(edges, order)))
   )
 }
 
 const generate = async newLayer => {
+  _pqr = { p: settings.p, q: settings.q, r: settings.r }
   if (generating) {
     return
   }
   generating = true
   if (!newLayer) {
-    ctx.fillStyle = 'black'
-    ctx.fillRect(0, 0, width, height)
-    newLayer = layers
+    await render()
+    newLayer = settings.layers
   }
 
   while (
     polygons.length < newLayer &&
-    polygons.reduce((a, p) => a + p.length, 0) < limit
+    polygons.reduce((a, p) => a + p.length, 0) < settings.limit
   ) {
+    if (stop) {
+      break
+    }
     if (polygons.length === 0) {
-      const root = getRootTriangle(p, q, r)
-      await asynced(() => getTriangles(root, p, 0))
+      const root = getRootTriangle()
+      await asynced(() => getTriangles(root, 0))
     } else {
-      await nextLayer()
+      await asynced(() => nextLayer())
     }
   }
 
   generating = false
+  stop = false
 }
 
 const regenerate = () => {
-  polygons.length = 0
-  triangles.length = 0
-  size()
-  generate()
+  clearTimeout(queueTimeout)
+  if (reverting) {
+    return
+  }
+  if (!generating) {
+    stop = false
+    polygons.length = 0
+    triangles.length = 0
+    for (let token in tokens) {
+      delete tokens[token]
+    }
+
+    size(true)
+    generate()
+  } else {
+    stop = true
+    queueTimeout = setTimeout(regenerate, 10)
+  }
 }
 
 const render = async () => {
-  statsPanel && statsPanel.begin()
-  ctx.fillStyle = 'black'
+  showStats.showStats && stats.begin()
+
+  ctx.fillStyle = settings.backgroundColor
   ctx.fillRect(0, 0, width, height)
 
-  if (fill !== 'colored') {
-    ctx.fillStyle = fill
+  if (settings.fill !== 'colored') {
+    ctx.fillStyle = settings.fillColor
   }
-  if (stroke !== 'colored') {
-    ctx.strokeStyle = stroke
+  if (settings.stroke !== 'colored') {
+    ctx.strokeStyle = settings.strokeColor
   }
 
   // const renderQueue = renderPolygons(polygons[0], 0)
@@ -498,7 +515,114 @@ const render = async () => {
   for (let o = 0; o < polygons.length; o++) {
     /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
   }
-  statsPanel && statsPanel.end()
+  showStats.showStats && stats.end()
+}
+
+const gui = new GUI({
+  load: presets,
+  preset,
+})
+
+gui.remember(settings)
+
+const pqrCheckRegenerate = () => {
+  const a = [~~settings.p, ~~settings.q, ~~settings.r]
+  const check = () => 1 / a[0] + 1 / a[1] + 1 / a[2] < 1
+  while (!check()) {
+    let i0 = ~~(Math.random() * 3)
+    for (let i = 0; i < 3; i++) {
+      for (let z = 0; z < 3; z++) {
+        a[(i0 + i) % 3]++
+        if (check()) {
+          break
+        }
+        if (i < 2) {
+          a[(i0 + i) % 3]--
+        }
+      }
+    }
+  }
+  settings.p !== a[0] && (settings.p = a[0])
+  settings.q !== a[1] && (settings.q = a[1])
+  settings.r !== a[2] && (settings.r = a[2])
+
+  if (settings.p !== _pqr.p || settings.q !== _pqr.q || settings.r !== _pqr.r) {
+    regenerate()
+  }
+}
+
+gui.add(settings, 'projection', Object.keys(projections)).onChange(regenerate)
+gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
+gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
+gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
+gui.add(settings, 'layers', 1, 100, 1).onChange(regenerate)
+gui.add(settings, 'limit', 1, 100000, 1).listen().onChange(regenerate)
+gui.add(settings, 'coloredShift', 1, 359, 1).onChange(regenerate)
+gui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
+gui.addColor(settings, 'fillColor').onChange(render)
+gui.addColor(settings, 'fillColorEven').onChange(render)
+gui.add(settings, 'stroke', STROKE_COLOR_TYPES).onChange(render)
+gui.addColor(settings, 'strokeColor').onChange(render)
+gui.addColor(settings, 'backgroundColor').onChange(render)
+gui.add(settings, 'straight').onChange(render)
+gui.add(settings, 'wedges').onChange(render)
+gui.addColor(settings, 'wedgesColor').onChange(render)
+gui.add(settings, 'wedgesAlpha', 0, 100, 1).onChange(render)
+gui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(() => {
+  tokenSize = 10 ** settings.tokenPrecision
+  regenerate()
+})
+gui.add(settings, 'curvePrecision', 0, 20, 1).onChange(regenerate)
+gui.add(
+  {
+    increaseLimit: () => {
+      if (!generating) {
+        settings.limit =
+          polygons[polygons.length - 1].length *
+          (settings.p - 1 + settings.q / 5)
+        generate(polygons.length + 1)
+      }
+    },
+  },
+  'increaseLimit'
+)
+gui.add(
+  {
+    recenter: () => {
+      stop = true
+      translations.length = 0
+      regenerate()
+    },
+  },
+  'recenter'
+)
+gui.add(
+  {
+    stop: () => {
+      stop = true
+    },
+  },
+  'stop'
+)
+gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
+
+if (window.innerWidth < 600) {
+  gui.close()
+}
+gui.__preset_select.addEventListener('change', ({ target: { value } }) => {
+  location.hash = `#${encodeURIComponent(value)}`
+})
+window.addEventListener('hashchange', () => {
+  if (gui.preset !== getPreset()) {
+    gui.preset = getPreset()
+  }
+})
+const oldRevert = gui.revert.bind(gui)
+gui.revert = () => {
+  reverting = true
+  oldRevert()
+  reverting = false
+  regenerate()
 }
 
 interact('canvas')
@@ -510,7 +634,7 @@ interact('canvas')
         } else if (e.shiftKey) {
           scale(1 + e.dy / (2 * radius))
         } else {
-          translate([e.dx / (2 * radius), -e.dy / (2 * radius)])
+          translate([e.dx / w2, -e.dy / h2])
         }
         render()
       },
@@ -523,10 +647,6 @@ interact('canvas')
       render()
     },
   })
-  .on('doubletap', () => {
-    limit = polygons[polygons.length - 1].length * (p - 1 + q / 5)
-    generate(polygons.length + 1)
-  })
 
 window.ondeviceorientation = window.onresize = size
 window.hyperball = {
@@ -537,12 +657,8 @@ window.hyperball = {
   render,
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  document.body.appendChild(canvas)
-  size()
-  if (p * q + p * r + q * r >= p * q * r) {
-    console.log('BAD pqr', p, q, r, p * q + p * r + q * r, '>=', p * q * r)
-    return
-  }
-  generate()
-})
+document.body.appendChild(canvas)
+document.body.appendChild(stats.dom)
+stats.showPanel(null)
+size()
+generate()
