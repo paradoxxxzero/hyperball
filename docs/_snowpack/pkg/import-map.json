@@ -1,7 +1,7 @@
 {
   "imports": {
+    "dat.gui": "./dat.gui.js",
     "interactjs": "./interactjs.js",
-    "qs": "./qs.js",
     "stats.js": "./statsjs.js"
   }
 }
