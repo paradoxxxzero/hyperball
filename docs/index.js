@@ -396,7 +396,6 @@ const renderPolygon = ({ vertices, color, center, order }) => {
 
   if (settings.wedges) {
     ctx.globalAlpha = settings.wedgesAlpha / 100
-    ctx.save()
     ctx.fillStyle = settings.wedgesColor
     ctx.strokeStyle = settings.wedgesColor
     for (let i = 0; i < settings.p; i++) {
@@ -406,7 +405,6 @@ const renderPolygon = ({ vertices, color, center, order }) => {
         vertices[(i * 2 + 1) % vertices.length],
       ])
     }
-    ctx.restore()
     ctx.globalAlpha = 1
   }
 }
