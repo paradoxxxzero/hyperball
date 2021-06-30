@@ -365,6 +365,12 @@ const line = (u, v) => {
         u[2] * t + v[2] * s,
       ]
       const p = toDisk(fromHyperboloid(T))
+      if (
+        settings.projection === 'ortho' &&
+        (p[0].width || p[0] < 0 || p[1].height || p[1] < 0)
+      ) {
+        break
+      }
       ctx.lineTo(p[0], p[1])
     }
   }
