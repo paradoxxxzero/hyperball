@@ -44,7 +44,7 @@ const size = force => {
   h2 = height / 2
   const s2 = Math.min(w2, h2)
   radius = {
-    inverted: 0.3 * s2,
+    inverted: 0.4 * s2,
     poincare: 0.9 * s2,
     klein: 0.9 * s2,
     band: 0.102 * h2,
@@ -446,19 +446,26 @@ const nextLayer = () => {
   )
 }
 
-const generate = async newLayer => {
+const generate = async cont => {
   _pqr = { p: settings.p, q: settings.q, r: settings.r }
   if (generating) {
     return
   }
   generating = true
-  if (!newLayer) {
+
+  if (!cont) {
     await render()
-    newLayer = settings.layers
+  } else {
+    if (polygons.length > settings.layers) {
+      polygons.splice(settings.layers)
+      while (polygons.reduce((a, p) => a + p.length, 0) > settings.limit) {
+        polygons.splice(settings.layers)
+      }
+    }
   }
 
   while (
-    polygons.length < newLayer &&
+    polygons.length < settings.layers &&
     polygons.reduce((a, p) => a + p.length, 0) < settings.limit
   ) {
     if (stop) {
@@ -476,21 +483,39 @@ const generate = async newLayer => {
   stop = false
 }
 
-const regenerate = () => {
+const regenerate = cont => {
   clearTimeout(queueTimeout)
   if (reverting) {
     return
   }
   if (!generating) {
-    stop = false
-    polygons.length = 0
-    triangles.length = 0
-    for (let token in tokens) {
-      delete tokens[token]
-    }
+    if (!cont) {
+      stop = false
+      polygons.length = 0
+      triangles.length = 0
+      for (let token in tokens) {
+        delete tokens[token]
+      }
 
-    size(true)
-    generate()
+      size(true)
+    } else {
+      if (polygons.length > settings.layers) {
+        polygons.splice(settings.layers)
+        render()
+        return
+      }
+      if (polygons.reduce((a, p) => a + p.length, 0) > settings.limit) {
+        while (
+          polygons.length &&
+          polygons.reduce((a, p) => a + p.length, 0) > settings.limit
+        ) {
+          polygons.pop()
+        }
+        render()
+        return
+      }
+    }
+    generate(cont)
   } else {
     stop = true
     queueTimeout = setTimeout(regenerate, 10)
@@ -526,6 +551,9 @@ const gui = new GUI({
 gui.remember(settings)
 
 const pqrCheckRegenerate = () => {
+  if (reverting) {
+    return
+  }
   const a = [~~settings.p, ~~settings.q, ~~settings.r]
   const check = () => 1 / a[0] + 1 / a[1] + 1 / a[2] < 1
   while (!check()) {
@@ -551,13 +579,16 @@ const pqrCheckRegenerate = () => {
   }
 }
 
-gui.add(settings, 'projection', Object.keys(projections)).onChange(regenerate)
+gui.add(settings, 'projection', Object.keys(projections)).onChange(() => {
+  size(true)
+  render()
+})
 gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'layers', 1, 100, 1).onChange(regenerate)
-gui.add(settings, 'limit', 1, 100000, 1).listen().onChange(regenerate)
-gui.add(settings, 'coloredShift', 1, 359, 1).onChange(regenerate)
+gui.add(settings, 'layers', 1, 100, 1).onChange(() => regenerate(true))
+gui.add(settings, 'limit', 1).onChange(() => regenerate(true))
+gui.add(settings, 'coloredShift', -359, 359, 1).onChange(() => regenerate())
 gui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
 gui.addColor(settings, 'fillColor').onChange(render)
 gui.addColor(settings, 'fillColorEven').onChange(render)
@@ -572,20 +603,7 @@ gui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(() => {
   tokenSize = 10 ** settings.tokenPrecision
   regenerate()
 })
-gui.add(settings, 'curvePrecision', 0, 20, 1).onChange(regenerate)
-gui.add(
-  {
-    increaseLimit: () => {
-      if (!generating) {
-        settings.limit =
-          polygons[polygons.length - 1].length *
-          (settings.p - 1 + settings.q / 5)
-        generate(polygons.length + 1)
-      }
-    },
-  },
-  'increaseLimit'
-)
+gui.add(settings, 'curvePrecision', 0, 20, 1).onChange(() => regenerate())
 gui.add(
   {
     recenter: () => {
@@ -596,14 +614,7 @@ gui.add(
   },
   'recenter'
 )
-gui.add(
-  {
-    stop: () => {
-      stop = true
-    },
-  },
-  'stop'
-)
+
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 
 if (window.innerWidth < 600) {
@@ -619,6 +630,8 @@ window.addEventListener('hashchange', () => {
 })
 const oldRevert = gui.revert.bind(gui)
 gui.revert = () => {
+  stop = true
+  translations.length = 0
   reverting = true
   oldRevert()
   reverting = false
