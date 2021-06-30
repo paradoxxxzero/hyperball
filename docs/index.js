@@ -632,7 +632,7 @@ interact('canvas')
         if (e.ctrlKey) {
           rotate(-e.dx / (2 * radius))
         } else if (e.shiftKey) {
-          scale(1 + e.dy / (2 * radius))
+          // scale(1 + e.dy / (2 * radius))
         } else {
           translate([e.dx / w2, -e.dy / h2])
         }
@@ -643,7 +643,7 @@ interact('canvas')
   .gesturable({
     onmove: e => {
       rotate(-(Math.PI * e.da) / 180)
-      scale(1 + e.ds)
+      // scale(1 + e.ds)
       render()
     },
   })
