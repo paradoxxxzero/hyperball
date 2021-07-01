@@ -50,6 +50,7 @@ const size = force => {
     band: 0.102 * h2,
     half: 0.102 * h2,
     ortho: 0.3 * s2,
+    joukowsky: 0.9 * s2,
   }[settings.projection]
 
   if (settings.projection === 'half') {
@@ -63,33 +64,32 @@ const showStats = { showStats: false }
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
-const poinCareFromHyperboloid = ([x, y, z]) => {
+const poincareFromHyperboloid = ([x, y, z]) => {
+  // z = 1
   const nr = 1 / (1 + z)
   return [x * nr, y * nr]
 }
 
 const kleinFromHyperboloid = ([x, y, z]) => {
-  // 2 * z / (1 + z.z)
-  const [X, Y] = poinCareFromHyperboloid([x, y, z])
-  const nr = 1 / (1 + (X * X + Y * Y))
-  return [2 * X * nr, 2 * Y * nr]
+  // z = 0
+  const nr = 1 / z
+  return [x * nr, y * nr]
 }
 
 const orthoFromHyperboloid = ([x, y, z]) => {
-  // z
+  // No z
   return [x, y]
 }
 
 const invertedFromHyperboloid = ([x, y, z]) => {
-  // z / z.z
-  const [X, Y] = poinCareFromHyperboloid([x, y, z])
-  const nr = 1 / (X * X + Y * Y)
-  return [X * nr, Y * nr]
+  // z = -1
+  const nr = 1 / (-1 + z)
+  return [x * nr, y * nr]
 }
 
 const bandFromHyperboloid = ([x, y, z]) => {
   // 4 * Math.PI * arctanh(z)
-  const [X, Y] = poinCareFromHyperboloid([x, y, z])
+  const [X, Y] = poincareFromHyperboloid([x, y, z])
   const k = 4 * Math.PI * 0.5
   const d1 = (1 + X) * (1 + X) + Y * Y
   const d2 = (1 - X) * (1 - X) + Y * Y
@@ -101,20 +101,28 @@ const bandFromHyperboloid = ([x, y, z]) => {
 
 const halfFromHyperboloid = ([x, y, z]) => {
   // 4 * Math.PI * arctanh(z)
-  const [X, Y] = poinCareFromHyperboloid([x, y, z])
+  const [X, Y] = poincareFromHyperboloid([x, y, z])
   const X2 = X * X
   const Y1 = Y - 1
   const k = -1 / (X2 + Y1 * Y1)
   return [2 * X * k, (X2 + Y1 * (Y + 1)) * k]
 }
 
+const joukowskyFromHyperboloid = ([x, y, z]) => {
+  const [X, Y] = poincareFromHyperboloid([x, y, z])
+  const nr = 1 / (2 * (X * X + Y * Y))
+
+  return [X * (0.5 + nr), Y * (0.5 - nr)]
+}
+
 const projections = {
-  poincare: poinCareFromHyperboloid,
+  poincare: poincareFromHyperboloid,
   klein: kleinFromHyperboloid,
   inverted: invertedFromHyperboloid,
   band: bandFromHyperboloid,
   half: halfFromHyperboloid,
   ortho: orthoFromHyperboloid,
+  joukowsky: joukowskyFromHyperboloid,
 }
 
 const fromHyperboloid = p => projections[settings.projection](p)
