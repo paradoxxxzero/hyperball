@@ -616,6 +616,7 @@ const generate = async cont => {
     geometry.attributes.normal.needsUpdate = true
     geometry.computeBoundingBox()
     geometry.computeBoundingSphere()
+    geometry.computeTangents()
     render()
     renderer.render(scene, camera)
   }
