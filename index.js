@@ -14,9 +14,9 @@ let radius,
   h2,
   polygons = [],
   triangles = [],
-  translations = [],
+  transformations = [],
   generating = false,
-  tokens = {},
+  tokens = [],
   tokenSize,
   _pqr,
   queueTimeout,
@@ -186,7 +186,7 @@ const getToken = edges => {
   return str.sort().join('/')
 }
 
-const reflectOn = (edges, i) => {
+const reflectOn = (edges, i, order) => {
   let j = (i + 1) % 3
   let k = (i + 2) % 3
   edges[j] = reflect(edges[j], edges[i])
@@ -194,24 +194,27 @@ const reflectOn = (edges, i) => {
   edges[i] = edges[i].map(x => -x)
 
   const token = getToken(edges)
-  if (tokens[token]) {
-    return false
+  for (let i = order; i >= 0; i--) {
+    if (tokens[i][token]) {
+      return false
+    }
   }
-  tokens[token] = true
+  tokens[order][token] = true
   return true
 }
 
 const getTriangles = (edges, order) => {
-  if (stop) {
+  if (stop || polygons.reduce((a, p) => a + p.length, 0) >= settings.limit) {
     return
   }
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
+  tokens[order] = tokens[order] || []
 
   const vertices = []
   if (order > 0) {
-    if (!reflectOn(edges, 0)) {
+    if (!reflectOn(edges, 0, order)) {
       return
     }
   }
@@ -221,16 +224,18 @@ const getTriangles = (edges, order) => {
 
   const center = invertTriangle(edges)[1]
   for (let n = 0; n < settings.p * 2 - 1; n++) {
-    if (reflectOn(edges, 1 + (n % 2))) {
+    if (reflectOn(edges, 1 + (n % 2), order)) {
       vertices.push(invertTriangle(edges)[((n + 1) % 2) * 2])
       triangles[order].push([...edges])
     }
   }
 
-  for (let t = 0; t < translations.length; t++) {
-    hyperbolicTranslate(center, translations[t])
+  for (let t = 0; t < transformations.length; t++) {
+    const { type, parameter } = transformations[t]
+    const trans = type === 'scale' ? hyperbolicScale : hyperbolicTranslate
+    trans(center, parameter)
     for (let v = 0; v < vertices.length; v++) {
-      hyperbolicTranslate(vertices[v], translations[t])
+      trans(vertices[v], parameter)
     }
   }
 
@@ -275,9 +280,10 @@ const hyperbolicRotate = (vertex, theta) => {
 }
 
 const hyperbolicScale = (vertex, scale) => {
-  vertex[0] = Math.cosh(scale * Math.acosh(vertex[2]))
-  vertex[1] = Math.cosh(scale * Math.acosh(vertex[2]))
-  vertex[2] = Math.sqrt(vertex[0] ** 2 + vertex[1] ** 2 + 1)
+  const [xe, ye, ze] = vertex
+  const nr = scale / Math.sqrt(xe * xe + ye * ye + ze * ze)
+  const offset = [vertex[0] * nr, vertex[1] * nr, vertex[2] * nr]
+  hyperbolicTranslate(vertex, offset)
 }
 
 const hyperbolicGyration = (p1, p2, p3) => {
@@ -307,7 +313,7 @@ const translate = offset => {
     ...offset,
     1, //Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + 1),
   ]
-  translations.push(translation)
+  transformations.push({ type: 'translate', parameter: translation })
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
@@ -334,6 +340,7 @@ const rotate = theta => {
 }
 
 const scale = scale => {
+  transformations.push({ type: 'scale', parameter: scale })
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
@@ -455,6 +462,7 @@ const generate = async cont => {
   if (generating) {
     return
   }
+
   generating = true
 
   if (!cont) {
@@ -482,6 +490,10 @@ const generate = async cont => {
       await asynced(() => nextLayer())
     }
   }
+  if (polygons.reduce((a, p) => a + p.length, 0) === settings.limit) {
+    triangles.pop()
+    tokens.pop()
+  }
 
   generating = false
   stop = false
@@ -497,14 +509,18 @@ const regenerate = cont => {
       stop = false
       polygons.length = 0
       triangles.length = 0
-      for (let token in tokens) {
-        delete tokens[token]
-      }
+      tokens.length = 0
 
       size(true)
     } else {
+      if (triangles.length < polygons.length) {
+        polygons.pop()
+      }
+      // for (let i = 0; i < polygons.length)
       if (polygons.length > settings.layers) {
         polygons.splice(settings.layers)
+        triangles.splice(settings.layers)
+        tokens.splice(settings.layers)
         render()
         return
       }
@@ -514,15 +530,16 @@ const regenerate = cont => {
           polygons.reduce((a, p) => a + p.length, 0) > settings.limit
         ) {
           polygons.pop()
+          triangles.pop()
+          tokens.pop()
+          render()
         }
-        render()
-        return
       }
     }
     generate(cont)
   } else {
     stop = true
-    queueTimeout = setTimeout(regenerate, 10)
+    queueTimeout = setTimeout(() => regenerate(cont), 10)
   }
 }
 
@@ -582,6 +599,23 @@ const pqrCheckRegenerate = () => {
     regenerate()
   }
 }
+const debounce = (func, wait, immediate) => {
+  let timeout
+  return function (...args) {
+    let later = () => {
+      timeout = null
+      if (!immediate) func.apply(this, args)
+    }
+    let callNow = immediate && !timeout
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+    if (callNow) {
+      func.apply(this, args)
+    }
+  }
+}
+
+const continueGenerate = () => regenerate(true)
 
 gui.add(settings, 'projection', Object.keys(projections)).onChange(() => {
   size(true)
@@ -590,8 +624,8 @@ gui.add(settings, 'projection', Object.keys(projections)).onChange(() => {
 gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'layers', 1, 100, 1).onChange(() => regenerate(true))
-gui.add(settings, 'limit', 1).onChange(() => regenerate(true))
+gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
+gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'coloredShift', -359, 359, 1).onChange(() => regenerate())
 gui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
 gui.addColor(settings, 'fillColor').onChange(render)
@@ -612,7 +646,7 @@ gui.add(
   {
     recenter: () => {
       stop = true
-      translations.length = 0
+      transformations.length = 0
       regenerate()
     },
   },
@@ -635,7 +669,7 @@ window.addEventListener('hashchange', () => {
 const oldRevert = gui.revert.bind(gui)
 gui.revert = () => {
   stop = true
-  translations.length = 0
+  transformations.length = 0
   reverting = true
   oldRevert()
   reverting = false
@@ -649,7 +683,7 @@ interact('canvas')
         if (e.ctrlKey) {
           rotate(-e.dx / (2 * radius))
         } else if (e.shiftKey) {
-          // scale(1 + e.dy / (2 * radius))
+          scale(e.dy / (2 * radius))
         } else {
           translate([e.dx / w2, -e.dy / h2])
         }
@@ -660,7 +694,7 @@ interact('canvas')
   .gesturable({
     onmove: e => {
       rotate(-(Math.PI * e.da) / 180)
-      // scale(1 + e.ds)
+      scale(e.ds)
       render()
     },
   })
@@ -670,7 +704,7 @@ window.hyperball = {
   polygons,
   tokens,
   translate,
-  translations,
+  transformations,
   render,
 }
 
