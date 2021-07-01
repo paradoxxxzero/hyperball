@@ -13,6 +13,7 @@
   "dependencies": {
     "dat.gui": "^0.7.7",
     "interactjs": "^1.10.11",
-    "stats.js": "^0.17.0"
+    "stats.js": "^0.17.0",
+    "three": "^0.130.0"
   }
 }

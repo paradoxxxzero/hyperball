@@ -2,9 +2,72 @@ import Stats from './_snowpack/pkg/statsjs.js'
 import interact from './_snowpack/pkg/interactjs.js'
 import presets from './presets.js'
 import { GUI } from './_snowpack/pkg/dat.gui.js'
+import {
+  AmbientLight,
+  BufferAttribute,
+  BufferGeometry,
+  Color,
+  DoubleSide,
+  DynamicDrawUsage,
+  Mesh,
+  MeshLambertMaterial,
+  PerspectiveCamera,
+  PointLight,
+  Scene,
+  WebGLRenderer,
+} from './_snowpack/pkg/three.js'
+import { OrbitControls } from './_snowpack/pkg/three/examples/jsm/controls/OrbitControls.js'
+
+const renderer = new WebGLRenderer({
+  antialias: true,
+})
+renderer.setPixelRatio(window.devicePixelRatio)
+renderer.setSize(window.innerWidth, window.innerHeight)
+
+const scene = new Scene()
+
+const camera = new PerspectiveCamera(
+  90,
+  window.innerWidth / window.innerHeight,
+  0.001,
+  1000
+)
+camera.position.set(0, 0, -1)
+camera.lookAt(0, 0, 10)
+camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
+camera.updateProjectionMatrix()
+
+const ambientLight = new AmbientLight(0x999999)
+scene.add(ambientLight)
+
+const pointLight = new PointLight(0xffffff, 1)
+camera.add(pointLight)
+
+scene.add(camera)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.minDistance = 0
+controls.maxDistance = 100
+controls.enabled = false
 
 const canvas = document.createElement('canvas')
 const ctx = canvas.getContext('2d')
+
+const positions = new Float32Array(3 * 100000)
+const colors = new Float32Array(100000)
+const geometry = new BufferGeometry()
+geometry.setAttribute(
+  'position',
+  new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+)
+geometry.setAttribute(
+  'color',
+  new BufferAttribute(colors, 3).setUsage(DynamicDrawUsage)
+)
+const mat = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })
+const mesh = new Mesh(geometry, mat)
+scene.add(mesh)
+const index = []
+let pos = 0
 
 // Globals
 let radius,
@@ -21,6 +84,7 @@ let radius,
   _pqr,
   queueTimeout,
   reverting,
+  backend = '2d',
   stop = false
 
 const getPreset = () =>
@@ -38,8 +102,15 @@ const size = force => {
   if (!force && canvas.width === width && canvas.height === height) {
     return
   }
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
+  camera.updateProjectionMatrix()
+
+  renderer.setSize(window.innerWidth, window.innerHeight)
+
   canvas.width = width
   canvas.height = height
+  // }
   w2 = width / 2
   h2 = height / 2
   const s2 = Math.min(w2, h2)
@@ -50,7 +121,7 @@ const size = force => {
     band: 0.102 * h2,
     half: 0.102 * h2,
     ortho: 0.3 * s2,
-    joukowsky: 0.9 * s2,
+    joukowsky: 0.8 * w2,
   }[settings.projection]
 
   if (settings.projection === 'half') {
@@ -60,7 +131,7 @@ const size = force => {
 }
 
 const stats = new Stats()
-const showStats = { showStats: false }
+const showStats = { showStats: false, '3dControls': false }
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
@@ -124,6 +195,8 @@ const projections = {
   ortho: orthoFromHyperboloid,
   joukowsky: joukowskyFromHyperboloid,
 }
+
+const views = ['3d poincare', '3d klein', '3d inverted']
 
 const fromHyperboloid = p => projections[settings.projection](p)
 
@@ -246,11 +319,9 @@ const getTriangles = (edges, order) => {
       trans(vertices[v], parameter)
     }
   }
-
   const polygon = {
     vertices,
     center,
-    color: `hsl(${order * settings.coloredShift}deg, 50%, 60%)`,
     order,
   }
   renderPolygon(polygon)
@@ -317,10 +388,10 @@ const invertTriangle = points => {
 }
 
 const translate = offset => {
-  const translation = [
-    ...offset,
-    1, //Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + 1),
-  ]
+  if (backend === '2d') {
+    offset[0] *= -1
+  }
+  const translation = [...offset, 1]
   transformations.push({ type: 'translate', parameter: translation })
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
@@ -392,8 +463,27 @@ const line = (u, v) => {
   ctx.lineTo(pv[0], pv[1])
 }
 
-const renderPolygon = ({ vertices, color, center, order }) => {
-  if (vertices.length < 3) return
+const renderPolygon = ({ vertices, center, order }) => {
+  if (vertices.length < 3) {
+    return
+  }
+  if (backend === '3d') {
+    const color = new Color()
+    color.setHSL((order / settings.coloredShift) % 1, 0.5, 0.6)
+
+    for (let i = 0; i < settings.p * 2; i++) {
+      render3dVertices(
+        [
+          center,
+          vertices[i % vertices.length],
+          vertices[(i + 1) % vertices.length],
+        ],
+        color
+      )
+    }
+    return
+  }
+  const color = `hsl(${order * settings.coloredShift}deg, 50%, 60%)`
   if (settings.fill === 'colored') {
     ctx.fillStyle = color
   } else if (settings.fill === 'odd') {
@@ -413,7 +503,7 @@ const renderPolygon = ({ vertices, color, center, order }) => {
   } else {
     polyVertices = vertices
   }
-  renderVertices(polyVertices, color)
+  renderVertices(polyVertices)
 
   if (settings.wedges) {
     ctx.globalAlpha = settings.wedgesAlpha / 100
@@ -429,7 +519,6 @@ const renderPolygon = ({ vertices, color, center, order }) => {
     ctx.globalAlpha = 1
   }
 }
-
 const renderVertices = vertices => {
   ctx.beginPath()
 
@@ -442,6 +531,20 @@ const renderVertices = vertices => {
 
   settings.fill === 'none' || ctx.fill()
   settings.stroke === 'none' || ctx.stroke()
+}
+
+const render3dVertices = (vertices, color) => {
+  index.push(pos, pos + 1, pos + 2)
+  for (let j = 0, m = vertices.length; j < m; j++) {
+    const v = vertices[j]
+    positions[pos * 3] = v[0]
+    positions[pos * 3 + 1] = v[1]
+    positions[pos * 3 + 2] = v[2]
+    colors[pos * 3] = color.r
+    colors[pos * 3 + 1] = color.g
+    colors[pos * 3 + 2] = color.b
+    pos++
+  }
 }
 
 const renderPolygons = polygons => {
@@ -474,6 +577,7 @@ const generate = async cont => {
   generating = true
 
   if (!cont) {
+    pos = 0
     await render()
   } else {
     if (polygons.length > settings.layers) {
@@ -503,6 +607,18 @@ const generate = async cont => {
     tokens.pop()
   }
 
+  if (backend === '3d') {
+    geometry.setIndex(index)
+    geometry.attributes.position.needsUpdate = true
+    geometry.attributes.color.needsUpdate = true
+    geometry.setDrawRange(0, pos)
+    geometry.computeVertexNormals()
+    geometry.attributes.normal.needsUpdate = true
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    render()
+    renderer.render(scene, camera)
+  }
   generating = false
   stop = false
 }
@@ -524,7 +640,6 @@ const regenerate = cont => {
       if (triangles.length < polygons.length) {
         polygons.pop()
       }
-      // for (let i = 0; i < polygons.length)
       if (polygons.length > settings.layers) {
         polygons.splice(settings.layers)
         triangles.splice(settings.layers)
@@ -551,23 +666,32 @@ const regenerate = cont => {
   }
 }
 
-const render = async () => {
+const render = () => {
   showStats.showStats && stats.begin()
+  if (backend === '2d') {
+    ctx.fillStyle = settings.backgroundColor
+    ctx.fillRect(0, 0, width, height)
 
-  ctx.fillStyle = settings.backgroundColor
-  ctx.fillRect(0, 0, width, height)
-
-  if (settings.fill !== 'colored') {
-    ctx.fillStyle = settings.fillColor
-  }
-  if (settings.stroke !== 'colored') {
-    ctx.strokeStyle = settings.strokeColor
+    if (settings.fill !== 'colored') {
+      ctx.fillStyle = settings.fillColor
+    }
+    if (settings.stroke !== 'colored') {
+      ctx.strokeStyle = settings.strokeColor
+    }
   }
 
   // const renderQueue = renderPolygons(polygons[0], 0)
-
+  pos = 0
   for (let o = 0; o < polygons.length; o++) {
     /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+  }
+  if (backend === '3d') {
+    geometry.attributes.position.needsUpdate = true
+    geometry.attributes.color.needsUpdate = true
+    geometry.computeVertexNormals()
+    geometry.attributes.normal.needsUpdate = true
+    geometry.setDrawRange(0, pos)
+    renderer.render(scene, camera)
   }
   showStats.showStats && stats.end()
 }
@@ -625,10 +749,37 @@ const debounce = (func, wait, immediate) => {
 
 const continueGenerate = () => regenerate(true)
 
-gui.add(settings, 'projection', Object.keys(projections)).onChange(() => {
-  size(true)
-  render()
-})
+gui
+  .add(settings, 'projection', Object.keys(projections).concat(views))
+  .onChange(v => {
+    if (backend === '2d' && views.includes(v)) {
+      backend = '3d'
+      canvas.style.display = 'none'
+      renderer.domElement.style.display = 'block'
+    } else if (backend === '3d' && !views.includes(v)) {
+      backend = '2d'
+      canvas.style.display = 'block'
+      renderer.domElement.style.display = 'none'
+    }
+    if (v === '3d poincare') {
+      camera.fov = 90
+      camera.position.set(0, 0, -1)
+      controls.target.set(0, 0, 1)
+      camera.updateProjectionMatrix()
+    } else if (v === '3d klein') {
+      camera.fov = 90
+      camera.position.set(0, 0, 0)
+      controls.target.set(0, 0, 1)
+      camera.updateProjectionMatrix()
+    } else if (v === '3d inverted') {
+      camera.fov = 130
+      camera.position.set(0, 0, 2)
+      controls.target.set(0, 0, 4)
+      camera.updateProjectionMatrix()
+    }
+    size(true)
+    render()
+  })
 gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
 gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
@@ -661,6 +812,7 @@ gui.add(
   'recenter'
 )
 
+gui.add(showStats, '3dControls').onChange(v => (controls.enabled = v))
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 
 if (window.innerWidth < 600) {
@@ -688,12 +840,15 @@ interact('canvas')
   .draggable({
     listeners: {
       move: e => {
+        if (backend === '3d' && showStats['3dControls']) {
+          return
+        }
         if (e.ctrlKey) {
           rotate(-e.dx / (2 * radius))
         } else if (e.shiftKey) {
           scale(e.dy / (2 * radius))
         } else {
-          translate([e.dx / w2, -e.dy / h2])
+          translate([-e.dx / w2, -e.dy / h2])
         }
         render()
       },
@@ -716,8 +871,18 @@ window.hyperball = {
   render,
 }
 
+renderer.domElement.id = 'c3d'
+canvas.id = 'c2d'
+renderer.domElement.style.display = 'none'
+document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
 document.body.appendChild(stats.dom)
 stats.showPanel(null)
 size()
 generate()
+
+renderer.setAnimationLoop(() => {
+  if (backend === '3d') {
+    renderer.render(scene, camera)
+  }
+})
