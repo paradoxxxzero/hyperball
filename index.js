@@ -50,7 +50,7 @@ const size = force => {
     band: 0.102 * h2,
     half: 0.102 * h2,
     ortho: 0.3 * s2,
-    joukowsky: 0.9 * s2,
+    joukowsky: 0.8 * w2,
   }[settings.projection]
 
   if (settings.projection === 'half') {
