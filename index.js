@@ -512,8 +512,8 @@ const renderPolygon = ({ vertices, center, order }) => {
     for (let i = 0; i < settings.p; i++) {
       renderVertices([
         center,
-        vertices[(i * 2) % vertices.length],
-        vertices[(i * 2 + 1) % vertices.length],
+        vertices[(i * 2 + (order % 2)) % vertices.length],
+        vertices[(i * 2 + (order % 2) + 1) % vertices.length],
       ])
     }
     ctx.globalAlpha = 1
