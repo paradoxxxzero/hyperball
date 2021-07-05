@@ -131,7 +131,7 @@ const size = force => {
     inverted: 0.4 * s2,
     band: 0.102 * h2,
     half: 0.102 * h2,
-    stereographic: 1 * s2,
+    stereographic: 0.9 * s2,
     orthographic: 0.3 * s2,
     joukowsky: 0.8 * w2,
   }[settings.projection]
@@ -200,7 +200,6 @@ const joukowsky = ([x, y, z]) => {
 
 const stereographic = ([x, y, z]) => {
   // z = 0
-  if (z > 0.75) return [NaN, NaN]
   const nr = 1 / (1 - z)
   return [x * nr, y * nr]
 }
@@ -235,7 +234,6 @@ const sign = () => (model === 'hyperbolic' ? -1 : model === 'parabolic' ? 0 : 1)
 const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign() * za * zb
 
 const cross = ([xa, ya, za], [xb, yb, zb]) => [
-  //
   ya * zb - za * yb,
   za * xb - xa * zb,
   sign() * (xa * yb - ya * xb),
@@ -331,13 +329,15 @@ const getTriangles = (edges, order) => {
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
-  tokens[order] = tokens[order] || []
+  tokens[order] = tokens[order] || {}
 
   const vertices = []
   if (order > 0) {
     if (!reflectOn(edges, 2, order)) {
       return
     }
+  } else {
+    tokens[order][getToken(edges)] = true
   }
   /*
 
@@ -544,7 +544,7 @@ const renderPolygon = ({ vertices, center, order }) => {
   }
   if (backend === '3d') {
     const color = new Color()
-    color.setHSL((order / settings.coloredShift) % 1, 0.5, 0.6)
+    color.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.6)
 
     for (let i = 0; i < settings.p * 2; i++) {
       render3dVertices(
@@ -569,16 +569,26 @@ const renderPolygon = ({ vertices, center, order }) => {
     ctx.strokeStyle = color
   }
 
-  let polyVertices = []
-  if (settings.r === 2 && model === 'hyperbolic') {
-    // Optimization
-    for (let i = 0; i < settings.p; i++) {
-      polyVertices.push(vertices[(i * 2) % vertices.length])
+  if (model === 'elliptic') {
+    for (let i = 0; i < settings.p * 2; i++) {
+      renderVertices([
+        center,
+        vertices[i % vertices.length],
+        vertices[(i + 1) % vertices.length],
+      ])
     }
   } else {
-    polyVertices = vertices
+    let polyVertices = []
+    if (settings.r === 2 && model === 'hyperbolic') {
+      // Optimization
+      for (let i = 0; i < settings.p; i++) {
+        polyVertices.push(vertices[(i * 2) % vertices.length])
+      }
+    } else {
+      polyVertices = vertices
+    }
+    renderVertices(polyVertices)
   }
-  renderVertices(polyVertices)
 
   if (settings.wedges) {
     ctx.globalAlpha = settings.wedgesAlpha / 100
@@ -759,9 +769,30 @@ const render = () => {
 
   // const renderQueue = renderPolygons(polygons[0], 0)
   pos = 0
-  for (let o = 0; o < polygons.length; o++) {
-    /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+  if (model === 'elliptic') {
+    const pol = []
+    for (let o = 0; o < polygons.length; o++) {
+      for (let i = 0, l = polygons[o].length; i < l; i++) {
+        pol.push(polygons[o][i])
+        // /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+      }
+    }
+    pol.sort(
+      ['stereographic', 'orthographic', 'inverted'].includes(
+        settings.projection
+      )
+        ? (a, b) => b.center[2] - a.center[2]
+        : (a, b) => a.center[2] - b.center[2]
+    )
+    for (let j = 0, n = pol.length; j < n; j++) {
+      renderPolygon(pol[j])
+    }
+  } else {
+    for (let o = 0; o < polygons.length; o++) {
+      /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+    }
   }
+
   if (backend === '3d') {
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.color.needsUpdate = true
