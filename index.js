@@ -10,7 +10,7 @@ import {
   DoubleSide,
   DynamicDrawUsage,
   Mesh,
-  MeshLambertMaterial,
+  MeshBasicMaterial,
   PerspectiveCamera,
   PointLight,
   Scene,
@@ -37,11 +37,11 @@ camera.lookAt(0, 0, 10)
 camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
 camera.updateProjectionMatrix()
 
-const ambientLight = new AmbientLight(0x999999)
-scene.add(ambientLight)
+// const ambientLight = new AmbientLight(0x999999)
+// scene.add(ambientLight)
 
-const pointLight = new PointLight(0xffffff, 1)
-camera.add(pointLight)
+// const pointLight = new PointLight(0xffffff, 1)
+// camera.add(pointLight)
 
 scene.add(camera)
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -63,7 +63,7 @@ geometry.setAttribute(
   'color',
   new BufferAttribute(colors, 3).setUsage(DynamicDrawUsage)
 )
-const mat = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })
+const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
 const mesh = new Mesh(geometry, mat)
 scene.add(mesh)
 const index = []
@@ -200,6 +200,7 @@ const joukowsky = ([x, y, z]) => {
 
 const stereographic = ([x, y, z]) => {
   // z = 0
+  if (z > 0.75) return [NaN, NaN]
   const nr = 1 / (1 - z)
   return [x * nr, y * nr]
 }
@@ -215,7 +216,7 @@ const projections = {
   stereographic: stereographic,
 }
 
-const views = ['3d poincare', '3d klein', '3d inverted']
+const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 
 const project = p => projections[settings.projection](p)
 
@@ -411,6 +412,13 @@ const ellipticTranslate = (vertex, offset) => {
   vertex[2] = -xe * xt + ze * cxt
 }
 
+const ellipticScale = (vertex, scale) => {
+  const [xe, ye, ze] = vertex
+  const nr = scale / Math.sqrt(xe * xe + ye * ye + ze * ze)
+  const offset = [vertex[0] * nr, vertex[1] * nr, vertex[2] * nr]
+  ellipticTranslate(vertex, offset)
+}
+
 const hyperbolicTranslate = (vertex, offset) => {
   let [xe, ye, ze] = vertex
   const [xt, yt, zt] = offset
@@ -520,7 +528,7 @@ const line = (u, v) => {
       const p = toDisk(project(T))
       if (
         settings.projection === 'orthographic' &&
-        (p[0].width || p[0] < 0 || p[1].height || p[1] < 0)
+        (p[0] > width || p[0] < 0 || p[1] > height || p[1] < 0)
       ) {
         break
       }
@@ -675,15 +683,16 @@ const generate = async cont => {
   }
 
   if (backend === '3d') {
-    geometry.setIndex(index)
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.color.needsUpdate = true
-    geometry.setDrawRange(0, pos)
-    geometry.computeVertexNormals()
-    geometry.attributes.normal.needsUpdate = true
-    geometry.computeBoundingBox()
-    geometry.computeBoundingSphere()
-    geometry.computeTangents()
+    if (geometry.attributes.position.count) {
+      geometry.setIndex(index)
+      geometry.attributes.position.needsUpdate = true
+      geometry.attributes.color.needsUpdate = true
+      geometry.setDrawRange(0, pos)
+      geometry.computeVertexNormals()
+      geometry.attributes.normal.needsUpdate = true
+      geometry.computeBoundingBox()
+      geometry.computeBoundingSphere()
+    }
     render()
     renderer.render(scene, camera)
   }
@@ -761,10 +770,7 @@ const render = () => {
     geometry.setDrawRange(0, pos)
     renderer.render(scene, camera)
   }
-  // ctx.save()
-  // ctx.fillStyle = 'white'
-  // renderVertices(invertTriangle(getRootTriangle()))
-  // ctx.restore()
+
   showStats.showStats && stats.end()
 }
 
@@ -830,6 +836,11 @@ gui
       camera.fov = 130
       camera.position.set(0, 0, 2)
       controls.target.set(0, 0, 4)
+      camera.updateProjectionMatrix()
+    } else if (v === '3d inside') {
+      camera.fov = 90
+      camera.position.set(0, 0, 0.1)
+      controls.target.set(0, 0, 0)
       camera.updateProjectionMatrix()
     }
     size(true)
