@@ -220,6 +220,9 @@ const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
 
 const normalize = ([x, y, z]) => {
+  if (x === 0 && y === 0 && z === 0) {
+    return [0, 0, 0]
+  }
   if (model === 'hyperbolic') {
     const k = Math.sign(z) / Math.sqrt(-x * x - y * y + z * z)
     return [x * k, y * k, z * k]
@@ -229,7 +232,7 @@ const normalize = ([x, y, z]) => {
   }
 }
 
-const sign = () => (model === 'hyperbolic' ? -1 : model === 'parabolic' ? 0 : 1)
+const sign = () => (model === 'hyperbolic' ? -1 : 1)
 
 const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign() * za * zb
 
@@ -256,8 +259,7 @@ const getRootTriangle = () => {
   const a =
     (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
   const b = Math.cos(qAngle)
-  const c = Math.sqrt(sign() * (1 - a * a - b * b))
-
+  const c = Math.sqrt(sign() * (1 - a * a - b * b)) || 1
   return [
     [1, 0, 0],
     [-Math.cos(pAngle), Math.sin(pAngle), 0],
@@ -288,22 +290,26 @@ const getToken = edges => {
   return str.sort().join('/')
 }
 
-// const reflectOn = (edges, i, order) => {
-//   let j = (i + 1) % 3
-//   let k = (i + 2) % 3
-//   edges[j] = reflect(edges[j], edges[i])
-//   edges[k] = reflect(edges[k], edges[i])
-//   edges[i] = [-edges[i][0], -edges[i][1], -edges[i][2]]
+const reflectTriOn = (tri, i, order) => {
+  let j = (i + 1) % 3
+  let k = (i + 2) % 3
+  tri[i] = reflect(
+    [tri[j][0] - tri[i][0], tri[j][1] - tri[i][1], tri[j][2] - tri[i][2]],
+    [tri[k][0] - tri[j][0], tri[k][1] - tri[j][1], tri[k][2] - tri[j][2]]
+  )
+  tri[i][0] += tri[j][0]
+  tri[i][1] += tri[j][1]
+  tri[i][2] += tri[j][2]
 
-//   const token = getToken(edges)
-//   for (let i = order; i >= 0; i--) {
-//     if (tokens[i][token]) {
-//       return false
-//     }
-//   }
-//   tokens[order][token] = true
-//   return true
-// }
+  const token = getToken(tri)
+  for (let i = order; i >= 0; i--) {
+    if (tokens[i][token]) {
+      return false
+    }
+  }
+  tokens[order][token] = true
+  return true
+}
 
 const reflectOn = (edges, i, order) => {
   let j = (i + 1) % 3
@@ -326,6 +332,8 @@ const getTriangles = (edges, order) => {
   if (stop || polygons.reduce((a, p) => a + p.length, 0) >= settings.limit) {
     return
   }
+  const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
+  const reflect_ = model === 'parabolic' ? reflectTriOn : reflectOn
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
@@ -333,7 +341,7 @@ const getTriangles = (edges, order) => {
 
   const vertices = []
   if (order > 0) {
-    if (!reflectOn(edges, 2, order)) {
+    if (!reflect_(edges, model === 'parabolic' ? 0 : 2, order)) {
       return
     }
   } else {
@@ -351,27 +359,28 @@ const getTriangles = (edges, order) => {
   C
   */
 
-  const center =
-    order % 2 === 1
-      ? intersect(edges[1], edges[0])
-      : intersect(edges[0], edges[1])
-  if (order % 2 === 1) {
-    vertices.push(intersect(edges[2], edges[0]))
-    vertices.push(intersect(edges[1], edges[2]))
+  let center
+  if (model === 'parabolic') {
+    center = [...edges[0]]
+    vertices.push([...edges[1]])
   } else {
-    vertices.push(intersect(edges[0], edges[2]))
-    vertices.push(intersect(edges[2], edges[1]))
+    center = intx(edges[0], edges[1])
+    vertices.push(intx(edges[0], edges[2]))
+    vertices.push(intx(edges[2], edges[1]))
   }
   triangles[order].push([...edges])
 
   for (let n = 0; n < settings.p * 2 - 1; n++) {
-    if (reflectOn(edges, (n + 1) % 2, order)) {
-      if (order % 2 === 1) {
-        vertices.push(intersect(edges[n % 2], edges[2]))
-      } else {
-        vertices.push(intersect(edges[2], edges[n % 2]))
+    if (model === 'parabolic') {
+      if (reflect_(edges, 1 + ((n + 1) % 2), order)) {
+        vertices.push([...edges[1 + ((n + 1) % 2)]])
+        triangles[order].push([...edges])
       }
-      triangles[order].push([...edges])
+    } else {
+      if (reflect_(edges, (n + 1) % 2, order)) {
+        vertices.push(intx(edges[2], edges[n % 2]))
+        triangles[order].push([...edges])
+      }
     }
   }
 
@@ -382,9 +391,14 @@ const getTriangles = (edges, order) => {
         ? type === 'scale'
           ? hyperbolicScale
           : hyperbolicTranslate
+        : model === 'elliptic'
+        ? type === 'scale'
+          ? ellipticScale
+          : ellipticTranslate
         : type === 'scale'
-        ? ellipticScale
-        : ellipticTranslate
+        ? parabolicScale
+        : parabolicTranslate
+
     trans(center, parameter)
     for (let v = 0; v < vertices.length; v++) {
       trans(vertices[v], parameter)
@@ -399,6 +413,20 @@ const getTriangles = (edges, order) => {
   polygons[order].push(polygon)
 }
 
+const hyperbolicTranslate = (vertex, offset) => {
+  let [xe, ye, ze] = vertex
+  const [xt, yt] = offset
+
+  const cxt = Math.cosh(Math.asinh(xt))
+  const cyt = Math.cosh(Math.asinh(yt))
+  vertex[0] = xe
+  vertex[1] = ye * cyt + ze * yt
+  vertex[2] = ye * yt + ze * cyt
+  ;[xe, , ze] = vertex
+  vertex[0] = xe * cxt - ze * xt
+  vertex[2] = -xe * xt + ze * cxt
+}
+
 const ellipticTranslate = (vertex, offset) => {
   let [xe, ye, ze] = vertex
   const [xt, yt, zt] = offset
@@ -407,30 +435,18 @@ const ellipticTranslate = (vertex, offset) => {
   vertex[0] = xe
   vertex[1] = ye * cyt - ze * yt
   vertex[2] = ye * yt + ze * cyt
-  ;[xe, ye, ze] = vertex
+  ;[xe, , ze] = vertex
   vertex[0] = xe * cxt + ze * xt
   vertex[2] = -xe * xt + ze * cxt
 }
 
-const ellipticScale = (vertex, scale) => {
-  const [xe, ye, ze] = vertex
-  const nr = scale / Math.sqrt(xe * xe + ye * ye + ze * ze)
-  const offset = [vertex[0] * nr, vertex[1] * nr, vertex[2] * nr]
-  ellipticTranslate(vertex, offset)
-}
-
-const hyperbolicTranslate = (vertex, offset) => {
+const parabolicTranslate = (vertex, offset) => {
   let [xe, ye, ze] = vertex
   const [xt, yt, zt] = offset
 
-  const cxt = Math.cosh(Math.asinh(xt))
-  const cyt = Math.cosh(Math.asinh(yt))
-  vertex[0] = xe
-  vertex[1] = ye * cyt + ze * yt
-  vertex[2] = ye * yt + ze * cyt
-  ;[xe, ye, ze] = vertex
-  vertex[0] = xe * cxt - ze * xt
-  vertex[2] = -xe * xt + ze * cxt
+  vertex[0] = xe - xt
+  vertex[1] = ye + yt
+  // vertex[2] = ze - zt
 }
 
 const hyperbolicRotate = (vertex, theta) => {
@@ -445,10 +461,24 @@ const hyperbolicRotate = (vertex, theta) => {
 const hyperbolicScale = (vertex, scale) => {
   const [xe, ye, ze] = vertex
   const nr = scale / Math.sqrt(xe * xe + ye * ye + ze * ze)
-  const offset = [vertex[0] * nr, vertex[1] * nr, vertex[2] * nr]
+  const offset = [vertex[0] * nr, -vertex[1] * nr, vertex[2] * nr]
   hyperbolicTranslate(vertex, offset)
 }
 
+const ellipticScale = (vertex, scale) => {
+  const [xe, ye, ze] = vertex
+  const nr = scale / Math.sqrt(xe * xe + ye * ye + ze * ze)
+  const offset = [vertex[0] * nr, -vertex[1] * nr, vertex[2] * nr]
+  ellipticTranslate(vertex, offset)
+}
+
+const parabolicScale = (vertex, scale) => {
+  let [xe, ye, ze] = vertex
+
+  vertex[0] = xe * (1 - scale)
+  vertex[1] = ye * (1 - scale)
+  vertex[2] = ze * (1 - scale)
+}
 const hyperbolicGyration = (p1, p2, p3) => {
   const [xa, ya] = p1
   const [xb, yb] = p2
@@ -467,7 +497,12 @@ const translate = offset => {
   const translation = [...offset, 1]
   transformations.push({ type: 'translate', parameter: translation })
   const translator =
-    model === 'hyperbolic' ? hyperbolicTranslate : ellipticTranslate
+    model === 'hyperbolic'
+      ? hyperbolicTranslate
+      : model === 'elliptic'
+      ? ellipticTranslate
+      : parabolicTranslate
+
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
@@ -495,13 +530,19 @@ const rotate = theta => {
 
 const scale = scale => {
   transformations.push({ type: 'scale', parameter: scale })
+  const scalor =
+    model === 'hyperbolic'
+      ? hyperbolicScale
+      : model === 'elliptic'
+      ? ellipticScale
+      : parabolicScale
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
       const { vertices, center } = orderPolygons[i]
-      hyperbolicScale(center, scale)
+      scalor(center, scale)
       for (let j = 0; j < vertices.length; j++) {
-        hyperbolicScale(vertices[j], scale)
+        scalor(vertices[j], scale)
       }
     }
   }
@@ -681,7 +722,20 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      const root = getRootTriangle()
+      let root = getRootTriangle()
+      if (model === 'parabolic') {
+        root = [
+          [0, 0, 0],
+          [Math.sin(Math.PI / settings.p), Math.cos(Math.PI / settings.p), 0],
+          [
+            0,
+            (Math.sin(Math.PI / settings.p) -
+              Math.cos(Math.PI / settings.r) / Math.tan(Math.PI / settings.r)) *
+              Math.tan(Math.PI / settings.q),
+            0,
+          ],
+        ]
+      }
       await asynced(() => getTriangles(root, 0))
     } else {
       await asynced(() => nextLayer())
@@ -692,6 +746,7 @@ const generate = async cont => {
     tokens.pop()
   }
 
+  render()
   if (backend === '3d') {
     if (geometry.attributes.position.count) {
       geometry.setIndex(index)
@@ -703,7 +758,6 @@ const generate = async cont => {
       geometry.computeBoundingBox()
       geometry.computeBoundingSphere()
     }
-    render()
     renderer.render(scene, camera)
   }
   generating = false
