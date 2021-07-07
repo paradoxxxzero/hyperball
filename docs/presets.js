@@ -310,7 +310,7 @@ export default {
         wedgesColor: '#000000',
         wedgesAlpha: 10,
         tokenPrecision: 2,
-        curvePrecision: 19,
+        curvePrecision: 14,
       },
     },
   },
