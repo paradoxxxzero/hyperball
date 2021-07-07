@@ -81,7 +81,6 @@ let radius,
   generating = false,
   tokens = [],
   tokenSize,
-  _pqr,
   queueTimeout,
   reverting,
   backend = '2d',
@@ -424,30 +423,28 @@ const getTriangles = (edges, order) => {
 }
 
 const hyperbolicTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
+  const [xe, ye, ze] = vertex
   const [xt, yt] = offset
 
   const cxt = Math.cosh(Math.asinh(xt))
   const cyt = Math.cosh(Math.asinh(yt))
-  vertex[0] = xe
+  const a = xe
+  const b = ye * yt + ze * cyt
+  vertex[0] = a * cxt - b * xt
   vertex[1] = ye * cyt + ze * yt
-  vertex[2] = ye * yt + ze * cyt
-  ;[xe, , ze] = vertex
-  vertex[0] = xe * cxt - ze * xt
-  vertex[2] = -xe * xt + ze * cxt
+  vertex[2] = -a * xt + b * cxt
 }
 
 const ellipticTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
+  const [xe, ye, ze] = vertex
   const [xt, yt, zt] = offset
   const cxt = Math.cos(Math.asin(xt))
   const cyt = Math.cos(Math.asin(yt))
-  vertex[0] = xe
+  const a = xe
+  const b = ye * yt + ze * cyt
+  vertex[0] = a * cxt + b * xt
   vertex[1] = ye * cyt - ze * yt
-  vertex[2] = ye * yt + ze * cyt
-  ;[xe, , ze] = vertex
-  vertex[0] = xe * cxt + ze * xt
-  vertex[2] = -xe * xt + ze * cxt
+  vertex[2] = -a * xt + b * cxt
 }
 
 const parabolicTranslate = (vertex, offset) => {
@@ -708,7 +705,6 @@ const nextLayer = () => {
 }
 
 const generate = async cont => {
-  _pqr = { p: settings.p, q: settings.q, r: settings.r }
   if (generating) {
     return
   }
@@ -717,7 +713,9 @@ const generate = async cont => {
 
   if (!cont) {
     pos = 0
-    await render()
+    polygons.p = settings.p
+    polygons.q = settings.q
+    polygons.r = settings.r
   } else {
     if (polygons.length > settings.layers) {
       polygons.splice(settings.layers)
@@ -729,7 +727,8 @@ const generate = async cont => {
 
   while (
     polygons.length < settings.layers &&
-    polygons.reduce((a, p) => a + p.length, 0) < settings.limit
+    polygons.reduce((a, p) => a + p.length, 0) < settings.limit &&
+    (polygons.length === 0 || polygons[polygons.length - 1].length)
   ) {
     if (stop) {
       break
@@ -822,14 +821,12 @@ const render = () => {
     }
   }
 
-  // const renderQueue = renderPolygons(polygons[0], 0)
   pos = 0
   if (model === 'elliptic') {
     const pol = []
     for (let o = 0; o < polygons.length; o++) {
       for (let i = 0, l = polygons[o].length; i < l; i++) {
         pol.push(polygons[o][i])
-        // /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
       }
     }
     pol.sort(
@@ -844,7 +841,7 @@ const render = () => {
     }
   } else {
     for (let o = 0; o < polygons.length; o++) {
-      /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+      renderPolygons(polygons[o], o)
     }
   }
 
@@ -873,7 +870,11 @@ const pqrCheckRegenerate = () => {
     return
   }
 
-  if (settings.p !== _pqr.p || settings.q !== _pqr.q || settings.r !== _pqr.r) {
+  if (
+    settings.p !== polygons.p ||
+    settings.q !== polygons.q ||
+    settings.r !== polygons.r
+  ) {
     regenerate()
   }
 }
@@ -1021,6 +1022,9 @@ window.hyperball = {
   tokens,
   translate,
   transformations,
+  generate,
+  regenerate,
+  settings,
   render,
   geometry,
 }
