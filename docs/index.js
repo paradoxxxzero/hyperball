@@ -52,8 +52,8 @@ controls.enabled = false
 const canvas = document.createElement('canvas')
 const ctx = canvas.getContext('2d')
 
-const positions = new Float32Array(3 * 100000)
-const colors = new Float32Array(100000)
+const positions = new Float32Array(3 * 1000000)
+const colors = new Float32Array(1000000)
 const geometry = new BufferGeometry()
 geometry.setAttribute(
   'position',
@@ -63,10 +63,10 @@ geometry.setAttribute(
   'color',
   new BufferAttribute(colors, 3).setUsage(DynamicDrawUsage)
 )
-const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
-const mesh = new Mesh(geometry, mat)
+const material = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
+const mesh = new Mesh(geometry, material)
 scene.add(mesh)
-const index = []
+let index = []
 let pos = 0
 
 // Globals
@@ -81,12 +81,12 @@ let radius,
   generating = false,
   tokens = [],
   tokenSize,
-  _pqr,
   queueTimeout,
   reverting,
-  backend = '2d',
+  backend,
   stop = false,
-  model
+  model,
+  sign
 
 const getModel = ({ p, q, r }) => {
   const anglesSum = 1 / p + 1 / q + 1 / r
@@ -105,23 +105,31 @@ const settings = {
 }
 tokenSize = 10 ** settings.tokenPrecision
 model = getModel(settings)
+sign = model === 'hyperbolic' ? -1 : 1
+
 const FILL_COLOR_TYPES = ['none', 'plain', 'odd', 'colored']
 const STROKE_COLOR_TYPES = ['none', 'plain', 'colored']
 
-const size = force => {
+const size = () => {
   ;({ width, height } = document.body.getBoundingClientRect())
-  if (!force && canvas.width === width && canvas.height === height) {
+  if (canvas.width === width && canvas.height === height) {
     return
   }
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
-  camera.updateProjectionMatrix()
 
-  renderer.setSize(window.innerWidth, window.innerHeight)
+  if (backend === '3d') {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  } else {
+    canvas.width = width
+    canvas.height = height
+  }
+  updateRadius()
+  render()
+}
 
-  canvas.width = width
-  canvas.height = height
-
+const updateRadius = () => {
   w2 = width / 2
   h2 = height / 2
   const s2 = Math.min(w2, h2)
@@ -139,7 +147,6 @@ const size = force => {
   if (settings.projection === 'half') {
     h2 = height
   }
-  render()
 }
 
 const stats = new Stats()
@@ -159,7 +166,7 @@ const klein = ([x, y, z]) => {
   return [x * nr, y * nr]
 }
 
-const orthographic = ([x, y, z]) => {
+const orthographic = ([x, y]) => {
   // No z
   return [x, y]
 }
@@ -220,29 +227,21 @@ const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
 
 const normalize = ([x, y, z]) => {
-  if (x === 0 && y === 0 && z === 0) {
+  const nr = sign * x * x + sign * y * y + z * z
+  if (nr === 0) {
     return [0, 0, 0]
   }
-  if (model === 'hyperbolic') {
-    const k = Math.sign(z) / Math.sqrt(-x * x - y * y + z * z)
-    return [x * k, y * k, z * k]
-  } else {
-    const k = 1 / Math.sqrt(x * x + y * y + z * z)
-    return [x * k, y * k, z * k]
-  }
+  const k = (sign === -1 ? Math.sign(z) : 1) / Math.sqrt(nr)
+  return [x * k, y * k, z * k]
 }
 
-const sign = () => (model === 'hyperbolic' ? -1 : 1)
-
-const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign() * za * zb
+const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign * za * zb
 
 const cross = ([xa, ya, za], [xb, yb, zb]) => [
   ya * zb - za * yb,
   za * xb - xa * zb,
-  sign() * (xa * yb - ya * xb),
+  sign * (xa * yb - ya * xb),
 ]
-
-const bisect = (a, b) => intersect(cross(a, b), 0.5 * (a + b))
 
 const reflect = (a, b) => {
   const ab2 = (2 * dot(a, b)) / dot(b, b)
@@ -250,22 +249,6 @@ const reflect = (a, b) => {
 }
 
 const intersect = (a, b) => normalize(cross(a, b))
-
-const getRootTriangle = () => {
-  const pAngle = Math.PI / settings.p
-  const qAngle = Math.PI / settings.q
-  const rAngle = Math.PI / settings.r
-
-  const a =
-    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
-  const b = Math.cos(qAngle)
-  const c = Math.sqrt(sign() * (1 - a * a - b * b)) || 1
-  return [
-    [1, 0, 0],
-    [-Math.cos(pAngle), Math.sin(pAngle), 0],
-    [b, a, c],
-  ]
-}
 
 const getToken = edges => {
   let str = []
@@ -290,50 +273,90 @@ const getToken = edges => {
   return str.sort().join('/')
 }
 
-const reflectTriOn = (tri, i, order) => {
+const reflectOn = (edges, i, order, check) => {
   let j = (i + 1) % 3
   let k = (i + 2) % 3
-  tri[i] = reflect(
-    [tri[j][0] - tri[i][0], tri[j][1] - tri[i][1], tri[j][2] - tri[i][2]],
-    [tri[k][0] - tri[j][0], tri[k][1] - tri[j][1], tri[k][2] - tri[j][2]]
-  )
-  tri[i][0] += tri[j][0]
-  tri[i][1] += tri[j][1]
-  tri[i][2] += tri[j][2]
 
-  const token = getToken(tri)
-  for (let i = order; i >= 0; i--) {
-    if (tokens[i][token]) {
-      return false
-    }
+  if (model === 'parabolic') {
+    edges[i] = reflect(
+      [
+        edges[j][0] - edges[i][0],
+        edges[j][1] - edges[i][1],
+        edges[j][2] - edges[i][2],
+      ],
+      [
+        edges[k][0] - edges[j][0],
+        edges[k][1] - edges[j][1],
+        edges[k][2] - edges[j][2],
+      ]
+    )
+    edges[i][0] += edges[j][0]
+    edges[i][1] += edges[j][1]
+    edges[i][2] += edges[j][2]
+  } else {
+    edges[j] = reflect(edges[j], edges[i])
+    edges[k] = reflect(edges[k], edges[i])
+    edges[i] = [-edges[i][0], -edges[i][1], -edges[i][2]]
   }
-  tokens[order][token] = true
-  return true
-}
-
-const reflectOn = (edges, i, order) => {
-  let j = (i + 1) % 3
-  let k = (i + 2) % 3
-  edges[j] = reflect(edges[j], edges[i])
-  edges[k] = reflect(edges[k], edges[i])
-  edges[i] = [-edges[i][0], -edges[i][1], -edges[i][2]]
 
   const token = getToken(edges)
-  for (let i = order; i >= 0; i--) {
-    if (tokens[i][token]) {
-      return false
+  if (check) {
+    for (let i = order; i >= 0; i--) {
+      if (tokens[i][token]) {
+        return false
+      }
     }
   }
   tokens[order][token] = true
   return true
 }
+
+const getRootTriangle = () => {
+  const pAngle = Math.PI / settings.p
+  const qAngle = Math.PI / settings.q
+  const rAngle = Math.PI / settings.r
+
+  if (model === 'parabolic') {
+    return [
+      [Math.sin(pAngle), Math.cos(pAngle), 0],
+      [
+        0,
+        (Math.sin(pAngle) - Math.cos(rAngle) / Math.tan(rAngle)) *
+          Math.tan(qAngle),
+        0,
+      ],
+      [0, 0, 0],
+    ]
+  }
+
+  const a =
+    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
+  const b = Math.cos(qAngle)
+  const c = Math.sqrt(sign * (1 - a * a - b * b))
+  return [
+    [1, 0, 0],
+    [-Math.cos(pAngle), Math.sin(pAngle), 0],
+    [b, a, c],
+  ]
+}
+
+/*
+    1
+   |q\
+   |  \   2->
+   |   \
+0->|   r\ 0
+   |   /
+   |p/   1->
+   2
+   C
+*/
 
 const getTriangles = (edges, order) => {
   if (stop || polygons.reduce((a, p) => a + p.length, 0) >= settings.limit) {
     return
   }
   const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
-  const reflect_ = model === 'parabolic' ? reflectTriOn : reflectOn
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
@@ -341,28 +364,18 @@ const getTriangles = (edges, order) => {
 
   const vertices = []
   if (order > 0) {
-    if (!reflect_(edges, model === 'parabolic' ? 0 : 2, order)) {
+    if (!reflectOn(edges, 2, order, true)) {
       return
     }
   } else {
     tokens[order][getToken(edges)] = true
   }
-  /*
-
-  |q\
-  |  \   2
-  |   \
-0 |   r\
-  |   /
-  |p/   1
-  
-  C
-  */
 
   let center
   if (model === 'parabolic') {
-    center = [...edges[0]]
+    center = [...edges[2]]
     vertices.push([...edges[1]])
+    vertices.push([...edges[0]])
   } else {
     center = intx(edges[0], edges[1])
     vertices.push(intx(edges[0], edges[2]))
@@ -371,17 +384,13 @@ const getTriangles = (edges, order) => {
   triangles[order].push([...edges])
 
   for (let n = 0; n < settings.p * 2 - 1; n++) {
+    reflectOn(edges, (n + 1) % 2, order)
     if (model === 'parabolic') {
-      if (reflect_(edges, 1 + ((n + 1) % 2), order)) {
-        vertices.push([...edges[1 + ((n + 1) % 2)]])
-        triangles[order].push([...edges])
-      }
+      vertices.push([...edges[(n + 1) % 2]])
     } else {
-      if (reflect_(edges, (n + 1) % 2, order)) {
-        vertices.push(intx(edges[2], edges[n % 2]))
-        triangles[order].push([...edges])
-      }
+      vertices.push(intx(edges[2], edges[n % 2]))
     }
+    triangles[order].push([...edges])
   }
 
   for (let t = 0; t < transformations.length; t++) {
@@ -414,39 +423,36 @@ const getTriangles = (edges, order) => {
 }
 
 const hyperbolicTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
+  const [xe, ye, ze] = vertex
   const [xt, yt] = offset
 
   const cxt = Math.cosh(Math.asinh(xt))
   const cyt = Math.cosh(Math.asinh(yt))
-  vertex[0] = xe
+  const a = xe
+  const b = ye * yt + ze * cyt
+  vertex[0] = a * cxt - b * xt
   vertex[1] = ye * cyt + ze * yt
-  vertex[2] = ye * yt + ze * cyt
-  ;[xe, , ze] = vertex
-  vertex[0] = xe * cxt - ze * xt
-  vertex[2] = -xe * xt + ze * cxt
+  vertex[2] = -a * xt + b * cxt
 }
 
 const ellipticTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
-  const [xt, yt, zt] = offset
+  const [xe, ye, ze] = vertex
+  const [xt, yt] = offset
   const cxt = Math.cos(Math.asin(xt))
   const cyt = Math.cos(Math.asin(yt))
-  vertex[0] = xe
+  const a = xe
+  const b = ye * yt + ze * cyt
+  vertex[0] = a * cxt + b * xt
   vertex[1] = ye * cyt - ze * yt
-  vertex[2] = ye * yt + ze * cyt
-  ;[xe, , ze] = vertex
-  vertex[0] = xe * cxt + ze * xt
-  vertex[2] = -xe * xt + ze * cxt
+  vertex[2] = -a * xt + b * cxt
 }
 
 const parabolicTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
-  const [xt, yt, zt] = offset
+  let [xe, ye] = vertex
+  const [xt, yt] = offset
 
   vertex[0] = xe - xt
   vertex[1] = ye + yt
-  // vertex[2] = ze - zt
 }
 
 const hyperbolicRotate = (vertex, theta) => {
@@ -479,23 +485,9 @@ const parabolicScale = (vertex, scale) => {
   vertex[1] = ye * (1 - scale)
   vertex[2] = ze * (1 - scale)
 }
-const hyperbolicGyration = (p1, p2, p3) => {
-  const [xa, ya] = p1
-  const [xb, yb] = p2
-  const [xc, yc] = p3
-  const a = 1 + xa * xb + ya * yb
-  const b = xb * ya - xa * yb
-  const c = a
-  const d = -b
-  const nr = c * c + d * d
-  const x = (a * c + b * d) / nr
-  const y = (b * c - a * d) / nr
-  return [x * xc - y * yc, y * xc + yc * x]
-}
 
 const translate = offset => {
-  const translation = [...offset, 1]
-  transformations.push({ type: 'translate', parameter: translation })
+  transformations.push({ type: 'translate', parameter: offset })
   const translator =
     model === 'hyperbolic'
       ? hyperbolicTranslate
@@ -507,9 +499,9 @@ const translate = offset => {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
       const { vertices, center } = orderPolygons[i]
-      translator(center, translation)
+      translator(center, offset)
       for (let j = 0; j < vertices.length; j++) {
-        translator(vertices[j], translation)
+        translator(vertices[j], offset)
       }
     }
   }
@@ -549,14 +541,17 @@ const scale = scale => {
 }
 
 const line = (u, v) => {
-  const curve = !settings.straight && settings.projection !== 'klein'
+  const curve =
+    model !== 'parabolic' &&
+    settings.projection !== 'klein' &&
+    !settings.straight
   const pu = toDisk(project(u))
   const pv = toDisk(project(v))
   const realDist =
     curve && Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
   if (curve && realDist > 20 - settings.curvePrecision) {
-    const ab = dot(u, v)
-    const t2s = t => Math.sqrt(t * t * (ab * ab - 1) + 1) - sign() * ab * t
+    const uv = dot(u, v)
+    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - sign * uv * t
     let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / realDist)
     for (let t = 1 - curveStep; t > 0; t -= curveStep) {
       const s = t2s(t)
@@ -584,17 +579,17 @@ const renderPolygon = ({ vertices, center, order }) => {
     return
   }
   if (backend === '3d') {
-    const color = new Color()
-    color.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.6)
+    const color1 = new Color()
+    color1.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.6)
+    const color2 = new Color()
+    color2.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.3)
 
     for (let i = 0; i < settings.p * 2; i++) {
       render3dVertices(
-        [
-          center,
-          vertices[i % vertices.length],
-          vertices[(i + 1) % vertices.length],
-        ],
-        color
+        center,
+        vertices[i % vertices.length],
+        vertices[(i + 1) % vertices.length],
+        i % 2 === order % 2 ? color2 : color1
       )
     }
     return
@@ -642,7 +637,7 @@ const renderPolygon = ({ vertices, center, order }) => {
         vertices[(i * 2 + (order % 2) + 1) % vertices.length],
       ])
     }
-    ctx.globalAlpha = 1
+    ctx.globalAlpha = settings.alpha / 100
   }
 }
 const renderVertices = vertices => {
@@ -659,31 +654,71 @@ const renderVertices = vertices => {
   settings.stroke === 'none' || ctx.stroke()
 }
 
-const render3dVertices = (vertices, color) => {
-  index.push(pos, pos + 1, pos + 2)
-  for (let j = 0, m = vertices.length; j < m; j++) {
-    const v = vertices[j]
-    positions[pos * 3] = v[0]
-    positions[pos * 3 + 1] = v[1]
-    positions[pos * 3 + 2] = v[2]
+const render3dVertices = (center, u, v, color) => {
+  const inVertices = []
+  const curve =
+    model !== 'parabolic' &&
+    settings.projection !== 'klein' &&
+    !settings.straight
+  if (curve) {
+    const uv = dot(u, v)
+    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - sign * uv * t
+    let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / 50)
+    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
+      const s = t2s(t)
+      const T = [
+        //
+        u[0] * t + v[0] * s,
+        u[1] * t + v[1] * s,
+        u[2] * t + v[2] * s,
+      ]
+      inVertices.push(T)
+    }
+  }
+
+  const centerPos = pos
+  positions[pos * 3] = center[0]
+  positions[pos * 3 + 1] = center[1]
+  positions[pos * 3 + 2] = center[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
+  positions[pos * 3] = u[0]
+  positions[pos * 3 + 1] = u[1]
+  positions[pos * 3 + 2] = u[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
+
+  for (let j = 0, m = inVertices.length; j < m; j++) {
+    const p = inVertices[j]
+    positions[pos * 3] = p[0]
+    positions[pos * 3 + 1] = p[1]
+    positions[pos * 3 + 2] = p[2]
     colors[pos * 3] = color.r
     colors[pos * 3 + 1] = color.g
     colors[pos * 3 + 2] = color.b
+    index.push(centerPos, pos - 1, pos)
     pos++
   }
+
+  index.push(centerPos, pos - 1, pos)
+  positions[pos * 3] = v[0]
+  positions[pos * 3 + 1] = v[1]
+  positions[pos * 3 + 2] = v[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
 }
 
-const renderPolygons = polygons => {
-  for (let i = 0, l = polygons.length; i < l; i++) {
-    renderPolygon(polygons[i])
-  }
-}
-
-const asynced = (f, timeout) =>
+const asynced = (f, timeout = 1) =>
   new Promise(resolve =>
     setTimeout(() => {
       resolve(f())
-    }, 1)
+    }, timeout)
   )
 
 const nextLayer = () => {
@@ -695,7 +730,6 @@ const nextLayer = () => {
 }
 
 const generate = async cont => {
-  _pqr = { p: settings.p, q: settings.q, r: settings.r }
   if (generating) {
     return
   }
@@ -703,8 +737,12 @@ const generate = async cont => {
   generating = true
 
   if (!cont) {
+    index = []
     pos = 0
-    await render()
+    polygons.p = settings.p
+    polygons.q = settings.q
+    polygons.r = settings.r
+    clear()
   } else {
     if (polygons.length > settings.layers) {
       polygons.splice(settings.layers)
@@ -716,29 +754,23 @@ const generate = async cont => {
 
   while (
     polygons.length < settings.layers &&
-    polygons.reduce((a, p) => a + p.length, 0) < settings.limit
+    polygons.reduce((a, p) => a + p.length, 0) < settings.limit &&
+    (polygons.length === 0 || polygons[polygons.length - 1].length)
   ) {
     if (stop) {
       break
     }
     if (polygons.length === 0) {
-      let root = getRootTriangle()
-      if (model === 'parabolic') {
-        root = [
-          [0, 0, 0],
-          [Math.sin(Math.PI / settings.p), Math.cos(Math.PI / settings.p), 0],
-          [
-            0,
-            (Math.sin(Math.PI / settings.p) -
-              Math.cos(Math.PI / settings.r) / Math.tan(Math.PI / settings.r)) *
-              Math.tan(Math.PI / settings.q),
-            0,
-          ],
-        ]
-      }
-      await asynced(() => getTriangles(root, 0))
+      await asynced(() => getTriangles(getRootTriangle(), 0))
     } else {
       await asynced(() => nextLayer())
+    }
+    if (backend === '3d') {
+      geometry.setIndex(index)
+      geometry.setDrawRange(0, index.length)
+      geometry.attributes.position.needsUpdate = true
+      geometry.attributes.color.needsUpdate = true
+      renderer.render(scene, camera)
     }
   }
   if (polygons.reduce((a, p) => a + p.length, 0) === settings.limit) {
@@ -747,19 +779,6 @@ const generate = async cont => {
   }
 
   render()
-  if (backend === '3d') {
-    if (geometry.attributes.position.count) {
-      geometry.setIndex(index)
-      geometry.attributes.position.needsUpdate = true
-      geometry.attributes.color.needsUpdate = true
-      geometry.setDrawRange(0, pos)
-      geometry.computeVertexNormals()
-      geometry.attributes.normal.needsUpdate = true
-      geometry.computeBoundingBox()
-      geometry.computeBoundingSphere()
-    }
-    renderer.render(scene, camera)
-  }
   generating = false
   stop = false
 }
@@ -775,8 +794,6 @@ const regenerate = cont => {
       polygons.length = 0
       triangles.length = 0
       tokens.length = 0
-
-      size(true)
     } else {
       if (triangles.length < polygons.length) {
         polygons.pop()
@@ -807,12 +824,12 @@ const regenerate = cont => {
   }
 }
 
-const render = () => {
-  showStats.showStats && stats.begin()
+const clear = () => {
   if (backend === '2d') {
+    ctx.globalAlpha = 1
     ctx.fillStyle = settings.backgroundColor
     ctx.fillRect(0, 0, width, height)
-
+    ctx.globalAlpha = settings.alpha / 100
     if (settings.fill !== 'colored') {
       ctx.fillStyle = settings.fillColor
     }
@@ -820,15 +837,22 @@ const render = () => {
       ctx.strokeStyle = settings.strokeColor
     }
   }
+}
 
-  // const renderQueue = renderPolygons(polygons[0], 0)
+const render = () => {
+  if (reverting) {
+    return
+  }
+  showStats.showStats && stats.begin()
+  clear()
+
   pos = 0
+  index = []
   if (model === 'elliptic') {
     const pol = []
     for (let o = 0; o < polygons.length; o++) {
       for (let i = 0, l = polygons[o].length; i < l; i++) {
         pol.push(polygons[o][i])
-        // /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
       }
     }
     pol.sort(
@@ -843,16 +867,16 @@ const render = () => {
     }
   } else {
     for (let o = 0; o < polygons.length; o++) {
-      /*await asynced(() => */ renderPolygons(polygons[o], o) /*)*/
+      for (let i = 0, l = polygons[o].length; i < l; i++) {
+        renderPolygon(polygons[o][i])
+      }
     }
   }
 
   if (backend === '3d') {
+    geometry.setDrawRange(0, index.length)
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.color.needsUpdate = true
-    geometry.computeVertexNormals()
-    geometry.attributes.normal.needsUpdate = true
-    geometry.setDrawRange(0, pos)
     renderer.render(scene, camera)
   }
 
@@ -868,11 +892,16 @@ gui.remember(settings)
 
 const pqrCheckRegenerate = () => {
   model = getModel(settings)
+  sign = model === 'hyperbolic' ? -1 : 1
   if (reverting) {
     return
   }
 
-  if (settings.p !== _pqr.p || settings.q !== _pqr.q || settings.r !== _pqr.r) {
+  if (
+    settings.p !== polygons.p ||
+    settings.q !== polygons.q ||
+    settings.r !== polygons.r
+  ) {
     regenerate()
   }
 }
@@ -880,6 +909,9 @@ const pqrCheckRegenerate = () => {
 const debounce = (func, wait, immediate) => {
   let timeout
   return function (...args) {
+    if (reverting) {
+      return
+    }
     let later = () => {
       timeout = null
       if (!immediate) func.apply(this, args)
@@ -898,11 +930,13 @@ const continueGenerate = () => regenerate(true)
 gui
   .add(settings, 'projection', Object.keys(projections).concat(views))
   .onChange(v => {
-    if (backend === '2d' && views.includes(v)) {
+    let regen = false
+    if (backend !== '3d' && views.includes(v)) {
       backend = '3d'
       canvas.style.display = 'none'
       renderer.domElement.style.display = 'block'
-    } else if (backend === '3d' && !views.includes(v)) {
+      regen = true
+    } else if (backend !== '2d' && !views.includes(v)) {
       backend = '2d'
       canvas.style.display = 'block'
       renderer.domElement.style.display = 'none'
@@ -912,28 +946,34 @@ gui
       camera.position.set(0, 0, -1)
       controls.target.set(0, 0, 1)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d klein') {
       camera.fov = 90
       camera.position.set(0, 0, 0)
       controls.target.set(0, 0, 1)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d inverted') {
       camera.fov = 130
       camera.position.set(0, 0, 2)
       controls.target.set(0, 0, 4)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d inside') {
       camera.fov = 90
       camera.position.set(0, 0, 0.1)
       controls.target.set(0, 0, 0)
       camera.updateProjectionMatrix()
+      controls.update()
     }
-    size(true)
-    render()
+    updateRadius()
+    if (!reverting) {
+      regen ? regenerate() : render()
+    }
   })
-gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
+gui.add(settings, 'p', 2, 20, 1).onChange(pqrCheckRegenerate)
+gui.add(settings, 'q', 2, 20, 1).onChange(pqrCheckRegenerate)
+gui.add(settings, 'r', 2, 20, 1).onChange(pqrCheckRegenerate)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'coloredShift', -359, 359, 1).onChange(() => regenerate())
@@ -941,6 +981,7 @@ gui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
 gui.addColor(settings, 'fillColor').onChange(render)
 gui.addColor(settings, 'fillColorEven').onChange(render)
 gui.add(settings, 'stroke', STROKE_COLOR_TYPES).onChange(render)
+gui.add(settings, 'alpha', 0, 100, 1).onChange(render)
 gui.addColor(settings, 'strokeColor').onChange(render)
 gui.addColor(settings, 'backgroundColor').onChange(render)
 gui.add(settings, 'straight').onChange(render)
@@ -957,6 +998,7 @@ gui.add(
     recenter: () => {
       stop = true
       transformations.length = 0
+      controls.reset()
       regenerate()
     },
   },
@@ -965,7 +1007,6 @@ gui.add(
 
 gui.add(showStats, '3dControls').onChange(v => (controls.enabled = v))
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
-
 if (window.innerWidth < 600) {
   gui.close()
 }
@@ -986,6 +1027,7 @@ gui.revert = () => {
   reverting = false
   regenerate()
 }
+gui.revert()
 
 interact('canvas')
   .draggable({
@@ -997,7 +1039,7 @@ interact('canvas')
         if (e.ctrlKey) {
           rotate(-e.dx / (2 * radius))
         } else if (e.shiftKey) {
-          scale(e.dy / (2 * radius))
+          scale(-e.dy / (2 * radius))
         } else {
           translate([-e.dx / w2, -e.dy / h2])
         }
@@ -1008,7 +1050,7 @@ interact('canvas')
   .gesturable({
     onmove: e => {
       rotate(-(Math.PI * e.da) / 180)
-      scale(e.ds)
+      scale(-e.ds)
       render()
     },
   })
@@ -1019,19 +1061,23 @@ window.hyperball = {
   tokens,
   translate,
   transformations,
+  generate,
+  regenerate,
+  settings,
   render,
-  geometry,
+  mesh,
+  scene,
+  camera,
+  controls,
 }
 
 renderer.domElement.id = 'c3d'
 canvas.id = 'c2d'
-renderer.domElement.style.display = 'none'
+// renderer.domElement.style.display = 'none'
 document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
 document.body.appendChild(stats.dom)
 stats.showPanel(null)
-size()
-generate()
 
 renderer.setAnimationLoop(() => {
   if (backend === '3d') {
