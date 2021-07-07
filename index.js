@@ -52,8 +52,8 @@ controls.enabled = false
 const canvas = document.createElement('canvas')
 const ctx = canvas.getContext('2d')
 
-const positions = new Float32Array(3 * 100000)
-const colors = new Float32Array(100000)
+const positions = new Float32Array(3 * 1000000)
+const colors = new Float32Array(1000000)
 const geometry = new BufferGeometry()
 geometry.setAttribute(
   'position',
@@ -63,8 +63,8 @@ geometry.setAttribute(
   'color',
   new BufferAttribute(colors, 3).setUsage(DynamicDrawUsage)
 )
-const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
-const mesh = new Mesh(geometry, mat)
+const material = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
+const mesh = new Mesh(geometry, material)
 scene.add(mesh)
 let index = []
 let pos = 0
@@ -83,7 +83,7 @@ let radius,
   tokenSize,
   queueTimeout,
   reverting,
-  backend = '2d',
+  backend,
   stop = false,
   model,
   sign
@@ -110,9 +110,9 @@ sign = model === 'hyperbolic' ? -1 : 1
 const FILL_COLOR_TYPES = ['none', 'plain', 'odd', 'colored']
 const STROKE_COLOR_TYPES = ['none', 'plain', 'colored']
 
-const size = force => {
+const size = () => {
   ;({ width, height } = document.body.getBoundingClientRect())
-  if (!force && canvas.width === width && canvas.height === height) {
+  if (canvas.width === width && canvas.height === height) {
     return
   }
 
@@ -125,7 +125,11 @@ const size = force => {
     canvas.width = width
     canvas.height = height
   }
+  updateRadius()
+  render()
+}
 
+const updateRadius = () => {
   w2 = width / 2
   h2 = height / 2
   const s2 = Math.min(w2, h2)
@@ -143,7 +147,6 @@ const size = force => {
   if (settings.projection === 'half') {
     h2 = height
   }
-  render()
 }
 
 const stats = new Stats()
@@ -163,7 +166,7 @@ const klein = ([x, y, z]) => {
   return [x * nr, y * nr]
 }
 
-const orthographic = ([x, y, z]) => {
+const orthographic = ([x, y]) => {
   // No z
   return [x, y]
 }
@@ -576,17 +579,17 @@ const renderPolygon = ({ vertices, center, order }) => {
     return
   }
   if (backend === '3d') {
-    const color = new Color()
-    color.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.6)
+    const color1 = new Color()
+    color1.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.6)
+    const color2 = new Color()
+    color2.setHSL(((order * settings.coloredShift) % 360) / 360, 0.5, 0.3)
 
     for (let i = 0; i < settings.p * 2; i++) {
       render3dVertices(
-        [
-          center,
-          vertices[i % vertices.length],
-          vertices[(i + 1) % vertices.length],
-        ],
-        color
+        center,
+        vertices[i % vertices.length],
+        vertices[(i + 1) % vertices.length],
+        i % 2 === order % 2 ? color2 : color1
       )
     }
     return
@@ -651,18 +654,64 @@ const renderVertices = vertices => {
   settings.stroke === 'none' || ctx.stroke()
 }
 
-const render3dVertices = (vertices, color) => {
-  index.push(pos, pos + 1, pos + 2)
-  for (let j = 0, m = vertices.length; j < m; j++) {
-    const v = vertices[j]
-    positions[pos * 3] = v[0]
-    positions[pos * 3 + 1] = v[1]
-    positions[pos * 3 + 2] = v[2]
+const render3dVertices = (center, u, v, color) => {
+  const inVertices = []
+  const curve =
+    model !== 'parabolic' &&
+    settings.projection !== 'klein' &&
+    !settings.straight
+  if (curve) {
+    const uv = dot(u, v)
+    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - sign * uv * t
+    let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / 50)
+    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
+      const s = t2s(t)
+      const T = [
+        //
+        u[0] * t + v[0] * s,
+        u[1] * t + v[1] * s,
+        u[2] * t + v[2] * s,
+      ]
+      inVertices.push(T)
+    }
+  }
+
+  const centerPos = pos
+  positions[pos * 3] = center[0]
+  positions[pos * 3 + 1] = center[1]
+  positions[pos * 3 + 2] = center[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
+  positions[pos * 3] = u[0]
+  positions[pos * 3 + 1] = u[1]
+  positions[pos * 3 + 2] = u[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
+
+  for (let j = 0, m = inVertices.length; j < m; j++) {
+    const p = inVertices[j]
+    positions[pos * 3] = p[0]
+    positions[pos * 3 + 1] = p[1]
+    positions[pos * 3 + 2] = p[2]
     colors[pos * 3] = color.r
     colors[pos * 3 + 1] = color.g
     colors[pos * 3 + 2] = color.b
+    index.push(centerPos, pos - 1, pos)
     pos++
   }
+
+  index.push(centerPos, pos - 1, pos)
+  positions[pos * 3] = v[0]
+  positions[pos * 3 + 1] = v[1]
+  positions[pos * 3 + 2] = v[2]
+  colors[pos * 3] = color.r
+  colors[pos * 3 + 1] = color.g
+  colors[pos * 3 + 2] = color.b
+  pos++
 }
 
 const asynced = (f, timeout = 1) =>
@@ -693,6 +742,7 @@ const generate = async cont => {
     polygons.p = settings.p
     polygons.q = settings.q
     polygons.r = settings.r
+    clear()
   } else {
     if (polygons.length > settings.layers) {
       polygons.splice(settings.layers)
@@ -715,6 +765,13 @@ const generate = async cont => {
     } else {
       await asynced(() => nextLayer())
     }
+    if (backend === '3d') {
+      geometry.setIndex(index)
+      geometry.setDrawRange(0, index.length)
+      geometry.attributes.position.needsUpdate = true
+      geometry.attributes.color.needsUpdate = true
+      renderer.render(scene, camera)
+    }
   }
   if (polygons.reduce((a, p) => a + p.length, 0) === settings.limit) {
     triangles.pop()
@@ -722,17 +779,6 @@ const generate = async cont => {
   }
 
   render()
-  if (backend === '3d') {
-    geometry.setIndex(index)
-    geometry.setDrawRange(0, pos)
-    geometry.computeBoundingBox()
-    geometry.computeVertexNormals()
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.color.needsUpdate = true
-    geometry.attributes.normal.needsUpdate = true
-
-    renderer.render(scene, camera)
-  }
   generating = false
   stop = false
 }
@@ -748,8 +794,6 @@ const regenerate = cont => {
       polygons.length = 0
       triangles.length = 0
       tokens.length = 0
-
-      size(true)
     } else {
       if (triangles.length < polygons.length) {
         polygons.pop()
@@ -780,17 +824,12 @@ const regenerate = cont => {
   }
 }
 
-const render = () => {
-  if (reverting) {
-    return
-  }
-  showStats.showStats && stats.begin()
+const clear = () => {
   if (backend === '2d') {
     ctx.globalAlpha = 1
     ctx.fillStyle = settings.backgroundColor
     ctx.fillRect(0, 0, width, height)
     ctx.globalAlpha = settings.alpha / 100
-
     if (settings.fill !== 'colored') {
       ctx.fillStyle = settings.fillColor
     }
@@ -798,8 +837,17 @@ const render = () => {
       ctx.strokeStyle = settings.strokeColor
     }
   }
+}
+
+const render = () => {
+  if (reverting) {
+    return
+  }
+  showStats.showStats && stats.begin()
+  clear()
 
   pos = 0
+  index = []
   if (model === 'elliptic') {
     const pol = []
     for (let o = 0; o < polygons.length; o++) {
@@ -826,11 +874,9 @@ const render = () => {
   }
 
   if (backend === '3d') {
-    geometry.setDrawRange(0, pos)
-    geometry.computeVertexNormals()
+    geometry.setDrawRange(0, index.length)
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.color.needsUpdate = true
-    geometry.attributes.normal.needsUpdate = true
     renderer.render(scene, camera)
   }
 
@@ -863,6 +909,9 @@ const pqrCheckRegenerate = () => {
 const debounce = (func, wait, immediate) => {
   let timeout
   return function (...args) {
+    if (reverting) {
+      return
+    }
     let later = () => {
       timeout = null
       if (!immediate) func.apply(this, args)
@@ -881,11 +930,13 @@ const continueGenerate = () => regenerate(true)
 gui
   .add(settings, 'projection', Object.keys(projections).concat(views))
   .onChange(v => {
-    if (backend === '2d' && views.includes(v)) {
+    let regen = false
+    if (backend !== '3d' && views.includes(v)) {
       backend = '3d'
       canvas.style.display = 'none'
       renderer.domElement.style.display = 'block'
-    } else if (backend === '3d' && !views.includes(v)) {
+      regen = true
+    } else if (backend !== '2d' && !views.includes(v)) {
       backend = '2d'
       canvas.style.display = 'block'
       renderer.domElement.style.display = 'none'
@@ -895,28 +946,34 @@ gui
       camera.position.set(0, 0, -1)
       controls.target.set(0, 0, 1)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d klein') {
       camera.fov = 90
       camera.position.set(0, 0, 0)
       controls.target.set(0, 0, 1)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d inverted') {
       camera.fov = 130
       camera.position.set(0, 0, 2)
       controls.target.set(0, 0, 4)
       camera.updateProjectionMatrix()
+      controls.update()
     } else if (v === '3d inside') {
       camera.fov = 90
       camera.position.set(0, 0, 0.1)
       controls.target.set(0, 0, 0)
       camera.updateProjectionMatrix()
+      controls.update()
     }
-    size(true)
-    render()
+    updateRadius()
+    if (!reverting) {
+      regen ? regenerate() : render()
+    }
   })
-gui.add(settings, 'p', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'q', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
-gui.add(settings, 'r', 2, 20, 1).listen().onChange(pqrCheckRegenerate)
+gui.add(settings, 'p', 2, 20, 1).onChange(pqrCheckRegenerate)
+gui.add(settings, 'q', 2, 20, 1).onChange(pqrCheckRegenerate)
+gui.add(settings, 'r', 2, 20, 1).onChange(pqrCheckRegenerate)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'coloredShift', -359, 359, 1).onChange(() => regenerate())
@@ -950,7 +1007,6 @@ gui.add(
 
 gui.add(showStats, '3dControls').onChange(v => (controls.enabled = v))
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
-
 if (window.innerWidth < 600) {
   gui.close()
 }
@@ -971,6 +1027,7 @@ gui.revert = () => {
   reverting = false
   regenerate()
 }
+gui.revert()
 
 interact('canvas')
   .draggable({
@@ -1008,18 +1065,19 @@ window.hyperball = {
   regenerate,
   settings,
   render,
-  geometry,
+  mesh,
+  scene,
+  camera,
+  controls,
 }
 
 renderer.domElement.id = 'c3d'
 canvas.id = 'c2d'
-renderer.domElement.style.display = 'none'
+// renderer.domElement.style.display = 'none'
 document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
 document.body.appendChild(stats.dom)
 stats.showPanel(null)
-size()
-generate()
 
 renderer.setAnimationLoop(() => {
   if (backend === '3d') {
