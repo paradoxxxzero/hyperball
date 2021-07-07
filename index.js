@@ -251,22 +251,6 @@ const reflect = (a, b) => {
 
 const intersect = (a, b) => normalize(cross(a, b))
 
-const getRootTriangle = () => {
-  const pAngle = Math.PI / settings.p
-  const qAngle = Math.PI / settings.q
-  const rAngle = Math.PI / settings.r
-
-  const a =
-    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
-  const b = Math.cos(qAngle)
-  const c = Math.sqrt(sign() * (1 - a * a - b * b)) || 1
-  return [
-    [1, 0, 0],
-    [-Math.cos(pAngle), Math.sin(pAngle), 0],
-    [b, a, c],
-  ]
-}
-
 const getToken = edges => {
   let str = []
   for (let i = 0; i < 3; i++) {
@@ -290,50 +274,90 @@ const getToken = edges => {
   return str.sort().join('/')
 }
 
-const reflectTriOn = (tri, i, order) => {
+const reflectOn = (edges, i, order, check) => {
   let j = (i + 1) % 3
   let k = (i + 2) % 3
-  tri[i] = reflect(
-    [tri[j][0] - tri[i][0], tri[j][1] - tri[i][1], tri[j][2] - tri[i][2]],
-    [tri[k][0] - tri[j][0], tri[k][1] - tri[j][1], tri[k][2] - tri[j][2]]
-  )
-  tri[i][0] += tri[j][0]
-  tri[i][1] += tri[j][1]
-  tri[i][2] += tri[j][2]
 
-  const token = getToken(tri)
-  for (let i = order; i >= 0; i--) {
-    if (tokens[i][token]) {
-      return false
-    }
+  if (model === 'parabolic') {
+    edges[i] = reflect(
+      [
+        edges[j][0] - edges[i][0],
+        edges[j][1] - edges[i][1],
+        edges[j][2] - edges[i][2],
+      ],
+      [
+        edges[k][0] - edges[j][0],
+        edges[k][1] - edges[j][1],
+        edges[k][2] - edges[j][2],
+      ]
+    )
+    edges[i][0] += edges[j][0]
+    edges[i][1] += edges[j][1]
+    edges[i][2] += edges[j][2]
+  } else {
+    edges[j] = reflect(edges[j], edges[i])
+    edges[k] = reflect(edges[k], edges[i])
+    edges[i] = [-edges[i][0], -edges[i][1], -edges[i][2]]
   }
-  tokens[order][token] = true
-  return true
-}
-
-const reflectOn = (edges, i, order) => {
-  let j = (i + 1) % 3
-  let k = (i + 2) % 3
-  edges[j] = reflect(edges[j], edges[i])
-  edges[k] = reflect(edges[k], edges[i])
-  edges[i] = [-edges[i][0], -edges[i][1], -edges[i][2]]
 
   const token = getToken(edges)
-  for (let i = order; i >= 0; i--) {
-    if (tokens[i][token]) {
-      return false
+  if (check) {
+    for (let i = order; i >= 0; i--) {
+      if (tokens[i][token]) {
+        return false
+      }
     }
   }
   tokens[order][token] = true
   return true
 }
+
+const getRootTriangle = () => {
+  const pAngle = Math.PI / settings.p
+  const qAngle = Math.PI / settings.q
+  const rAngle = Math.PI / settings.r
+
+  if (model === 'parabolic') {
+    return [
+      [Math.sin(pAngle), Math.cos(pAngle), 0],
+      [
+        0,
+        (Math.sin(pAngle) - Math.cos(rAngle) / Math.tan(rAngle)) *
+          Math.tan(qAngle),
+        0,
+      ],
+      [0, 0, 0],
+    ]
+  }
+
+  const a =
+    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
+  const b = Math.cos(qAngle)
+  const c = Math.sqrt(sign() * (1 - a * a - b * b))
+  return [
+    [1, 0, 0],
+    [-Math.cos(pAngle), Math.sin(pAngle), 0],
+    [b, a, c],
+  ]
+}
+
+/*
+    1
+   |q\
+   |  \   2->
+   |   \
+0->|   r\ 0
+   |   /
+   |p/   1->
+   2
+   C
+*/
 
 const getTriangles = (edges, order) => {
   if (stop || polygons.reduce((a, p) => a + p.length, 0) >= settings.limit) {
     return
   }
   const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
-  const reflect_ = model === 'parabolic' ? reflectTriOn : reflectOn
   edges = [...edges]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
@@ -341,28 +365,18 @@ const getTriangles = (edges, order) => {
 
   const vertices = []
   if (order > 0) {
-    if (!reflect_(edges, model === 'parabolic' ? 0 : 2, order)) {
+    if (!reflectOn(edges, 2, order, true)) {
       return
     }
   } else {
     tokens[order][getToken(edges)] = true
   }
-  /*
-
-  |q\
-  |  \   2
-  |   \
-0 |   r\
-  |   /
-  |p/   1
-  
-  C
-  */
 
   let center
   if (model === 'parabolic') {
-    center = [...edges[0]]
+    center = [...edges[2]]
     vertices.push([...edges[1]])
+    vertices.push([...edges[0]])
   } else {
     center = intx(edges[0], edges[1])
     vertices.push(intx(edges[0], edges[2]))
@@ -371,17 +385,13 @@ const getTriangles = (edges, order) => {
   triangles[order].push([...edges])
 
   for (let n = 0; n < settings.p * 2 - 1; n++) {
+    reflectOn(edges, (n + 1) % 2, order)
     if (model === 'parabolic') {
-      if (reflect_(edges, 1 + ((n + 1) % 2), order)) {
-        vertices.push([...edges[1 + ((n + 1) % 2)]])
-        triangles[order].push([...edges])
-      }
+      vertices.push([...edges[(n + 1) % 2]])
     } else {
-      if (reflect_(edges, (n + 1) % 2, order)) {
-        vertices.push(intx(edges[2], edges[n % 2]))
-        triangles[order].push([...edges])
-      }
+      vertices.push(intx(edges[2], edges[n % 2]))
     }
+    triangles[order].push([...edges])
   }
 
   for (let t = 0; t < transformations.length; t++) {
@@ -549,7 +559,10 @@ const scale = scale => {
 }
 
 const line = (u, v) => {
-  const curve = !settings.straight && settings.projection !== 'klein'
+  const curve =
+    model !== 'parabolic' &&
+    settings.projection !== 'klein' &&
+    !settings.straight
   const pu = toDisk(project(u))
   const pv = toDisk(project(v))
   const realDist =
@@ -642,7 +655,7 @@ const renderPolygon = ({ vertices, center, order }) => {
         vertices[(i * 2 + (order % 2) + 1) % vertices.length],
       ])
     }
-    ctx.globalAlpha = 1
+    ctx.globalAlpha = settings.alpha / 100
   }
 }
 const renderVertices = vertices => {
@@ -722,21 +735,7 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      let root = getRootTriangle()
-      if (model === 'parabolic') {
-        root = [
-          [0, 0, 0],
-          [Math.sin(Math.PI / settings.p), Math.cos(Math.PI / settings.p), 0],
-          [
-            0,
-            (Math.sin(Math.PI / settings.p) -
-              Math.cos(Math.PI / settings.r) / Math.tan(Math.PI / settings.r)) *
-              Math.tan(Math.PI / settings.q),
-            0,
-          ],
-        ]
-      }
-      await asynced(() => getTriangles(root, 0))
+      await asynced(() => getTriangles(getRootTriangle(), 0))
     } else {
       await asynced(() => nextLayer())
     }
@@ -810,8 +809,10 @@ const regenerate = cont => {
 const render = () => {
   showStats.showStats && stats.begin()
   if (backend === '2d') {
+    ctx.globalAlpha = 1
     ctx.fillStyle = settings.backgroundColor
     ctx.fillRect(0, 0, width, height)
+    ctx.globalAlpha = settings.alpha / 100
 
     if (settings.fill !== 'colored') {
       ctx.fillStyle = settings.fillColor
@@ -941,6 +942,7 @@ gui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
 gui.addColor(settings, 'fillColor').onChange(render)
 gui.addColor(settings, 'fillColorEven').onChange(render)
 gui.add(settings, 'stroke', STROKE_COLOR_TYPES).onChange(render)
+gui.add(settings, 'alpha', 0, 100, 1).onChange(render)
 gui.addColor(settings, 'strokeColor').onChange(render)
 gui.addColor(settings, 'backgroundColor').onChange(render)
 gui.add(settings, 'straight').onChange(render)
@@ -997,7 +999,7 @@ interact('canvas')
         if (e.ctrlKey) {
           rotate(-e.dx / (2 * radius))
         } else if (e.shiftKey) {
-          scale(e.dy / (2 * radius))
+          scale(-e.dy / (2 * radius))
         } else {
           translate([-e.dx / w2, -e.dy / h2])
         }
@@ -1008,7 +1010,7 @@ interact('canvas')
   .gesturable({
     onmove: e => {
       rotate(-(Math.PI * e.da) / 180)
-      scale(e.ds)
+      scale(-e.ds)
       render()
     },
   })
