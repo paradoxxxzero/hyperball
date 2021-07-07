@@ -356,6 +356,7 @@ const getTriangles = (edges, order) => {
   if (stop || polygons.reduce((a, p) => a + p.length, 0) >= settings.limit) {
     return
   }
+  const parity = edges.parity
   const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
   edges = [...edges]
   polygons[order] = polygons[order] || []
@@ -381,7 +382,10 @@ const getTriangles = (edges, order) => {
     vertices.push(intx(edges[0], edges[2]))
     vertices.push(intx(edges[2], edges[1]))
   }
-  triangles[order].push([...edges])
+
+  const rootEdges = [...edges]
+  rootEdges.parity = 1 - parity
+  triangles[order].push(rootEdges)
 
   for (let n = 0; n < settings.p * 2 - 1; n++) {
     reflectOn(edges, (n + 1) % 2, order)
@@ -390,7 +394,9 @@ const getTriangles = (edges, order) => {
     } else {
       vertices.push(intx(edges[2], edges[n % 2]))
     }
-    triangles[order].push([...edges])
+    const subEdges = [...edges]
+    subEdges.parity = n % 2 === 0 ? parity : 1 - parity
+    triangles[order].push(subEdges)
   }
 
   for (let t = 0; t < transformations.length; t++) {
@@ -413,10 +419,12 @@ const getTriangles = (edges, order) => {
       trans(vertices[v], parameter)
     }
   }
+
   const polygon = {
     vertices,
     center,
     order,
+    parity,
   }
   renderPolygon(polygon)
   polygons[order].push(polygon)
@@ -574,7 +582,7 @@ const line = (u, v) => {
   ctx.lineTo(pv[0], pv[1])
 }
 
-const renderPolygon = ({ vertices, center, order }) => {
+const renderPolygon = ({ vertices, center, order, parity }) => {
   if (vertices.length < 2) {
     return
   }
@@ -589,7 +597,7 @@ const renderPolygon = ({ vertices, center, order }) => {
         center,
         vertices[i % vertices.length],
         vertices[(i + 1) % vertices.length],
-        i % 2 === order % 2 ? color2 : color1
+        parity === i % 2 ? color2 : color1
       )
     }
     return
@@ -633,8 +641,8 @@ const renderPolygon = ({ vertices, center, order }) => {
     for (let i = 0; i < settings.p; i++) {
       renderVertices([
         center,
-        vertices[(i * 2 + (order % 2)) % vertices.length],
-        vertices[(i * 2 + (order % 2) + 1) % vertices.length],
+        vertices[(i * 2 + parity) % vertices.length],
+        vertices[(i * 2 + parity + 1) % vertices.length],
       ])
     }
     ctx.globalAlpha = settings.alpha / 100
@@ -761,7 +769,9 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      await asynced(() => getTriangles(getRootTriangle(), 0))
+      const root = getRootTriangle()
+      root.parity = 0
+      await asynced(() => getTriangles(root, 0))
     } else {
       await asynced(() => nextLayer())
     }
