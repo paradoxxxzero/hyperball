@@ -66,7 +66,7 @@ geometry.setAttribute(
 const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide })
 const mesh = new Mesh(geometry, mat)
 scene.add(mesh)
-const index = []
+let index = []
 let pos = 0
 
 // Globals
@@ -85,7 +85,8 @@ let radius,
   reverting,
   backend = '2d',
   stop = false,
-  model
+  model,
+  sign
 
 const getModel = ({ p, q, r }) => {
   const anglesSum = 1 / p + 1 / q + 1 / r
@@ -104,6 +105,8 @@ const settings = {
 }
 tokenSize = 10 ** settings.tokenPrecision
 model = getModel(settings)
+sign = model === 'hyperbolic' ? -1 : 1
+
 const FILL_COLOR_TYPES = ['none', 'plain', 'odd', 'colored']
 const STROKE_COLOR_TYPES = ['none', 'plain', 'colored']
 
@@ -112,14 +115,16 @@ const size = force => {
   if (!force && canvas.width === width && canvas.height === height) {
     return
   }
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
-  camera.updateProjectionMatrix()
 
-  renderer.setSize(window.innerWidth, window.innerHeight)
-
-  canvas.width = width
-  canvas.height = height
+  if (backend === '3d') {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.zoom = Math.min(1, window.innerWidth / window.innerHeight)
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  } else {
+    canvas.width = width
+    canvas.height = height
+  }
 
   w2 = width / 2
   h2 = height / 2
@@ -219,29 +224,21 @@ const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
 
 const normalize = ([x, y, z]) => {
-  if (x === 0 && y === 0 && z === 0) {
+  const nr = sign * x * x + sign * y * y + z * z
+  if (nr === 0) {
     return [0, 0, 0]
   }
-  if (model === 'hyperbolic') {
-    const k = Math.sign(z) / Math.sqrt(-x * x - y * y + z * z)
-    return [x * k, y * k, z * k]
-  } else {
-    const k = 1 / Math.sqrt(x * x + y * y + z * z)
-    return [x * k, y * k, z * k]
-  }
+  const k = (sign === -1 ? Math.sign(z) : 1) / Math.sqrt(nr)
+  return [x * k, y * k, z * k]
 }
 
-const sign = () => (model === 'hyperbolic' ? -1 : 1)
-
-const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign() * za * zb
+const dot = ([xa, ya, za], [xb, yb, zb]) => xa * xb + ya * yb + sign * za * zb
 
 const cross = ([xa, ya, za], [xb, yb, zb]) => [
   ya * zb - za * yb,
   za * xb - xa * zb,
-  sign() * (xa * yb - ya * xb),
+  sign * (xa * yb - ya * xb),
 ]
-
-const bisect = (a, b) => intersect(cross(a, b), 0.5 * (a + b))
 
 const reflect = (a, b) => {
   const ab2 = (2 * dot(a, b)) / dot(b, b)
@@ -332,7 +329,7 @@ const getRootTriangle = () => {
   const a =
     (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
   const b = Math.cos(qAngle)
-  const c = Math.sqrt(sign() * (1 - a * a - b * b))
+  const c = Math.sqrt(sign * (1 - a * a - b * b))
   return [
     [1, 0, 0],
     [-Math.cos(pAngle), Math.sin(pAngle), 0],
@@ -437,7 +434,7 @@ const hyperbolicTranslate = (vertex, offset) => {
 
 const ellipticTranslate = (vertex, offset) => {
   const [xe, ye, ze] = vertex
-  const [xt, yt, zt] = offset
+  const [xt, yt] = offset
   const cxt = Math.cos(Math.asin(xt))
   const cyt = Math.cos(Math.asin(yt))
   const a = xe
@@ -448,12 +445,11 @@ const ellipticTranslate = (vertex, offset) => {
 }
 
 const parabolicTranslate = (vertex, offset) => {
-  let [xe, ye, ze] = vertex
-  const [xt, yt, zt] = offset
+  let [xe, ye] = vertex
+  const [xt, yt] = offset
 
   vertex[0] = xe - xt
   vertex[1] = ye + yt
-  // vertex[2] = ze - zt
 }
 
 const hyperbolicRotate = (vertex, theta) => {
@@ -486,23 +482,9 @@ const parabolicScale = (vertex, scale) => {
   vertex[1] = ye * (1 - scale)
   vertex[2] = ze * (1 - scale)
 }
-const hyperbolicGyration = (p1, p2, p3) => {
-  const [xa, ya] = p1
-  const [xb, yb] = p2
-  const [xc, yc] = p3
-  const a = 1 + xa * xb + ya * yb
-  const b = xb * ya - xa * yb
-  const c = a
-  const d = -b
-  const nr = c * c + d * d
-  const x = (a * c + b * d) / nr
-  const y = (b * c - a * d) / nr
-  return [x * xc - y * yc, y * xc + yc * x]
-}
 
 const translate = offset => {
-  const translation = [...offset, 1]
-  transformations.push({ type: 'translate', parameter: translation })
+  transformations.push({ type: 'translate', parameter: offset })
   const translator =
     model === 'hyperbolic'
       ? hyperbolicTranslate
@@ -514,9 +496,9 @@ const translate = offset => {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
       const { vertices, center } = orderPolygons[i]
-      translator(center, translation)
+      translator(center, offset)
       for (let j = 0; j < vertices.length; j++) {
-        translator(vertices[j], translation)
+        translator(vertices[j], offset)
       }
     }
   }
@@ -565,8 +547,8 @@ const line = (u, v) => {
   const realDist =
     curve && Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
   if (curve && realDist > 20 - settings.curvePrecision) {
-    const ab = dot(u, v)
-    const t2s = t => Math.sqrt(t * t * (ab * ab - 1) + 1) - sign() * ab * t
+    const uv = dot(u, v)
+    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - sign * uv * t
     let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / realDist)
     for (let t = 1 - curveStep; t > 0; t -= curveStep) {
       const s = t2s(t)
@@ -683,17 +665,11 @@ const render3dVertices = (vertices, color) => {
   }
 }
 
-const renderPolygons = polygons => {
-  for (let i = 0, l = polygons.length; i < l; i++) {
-    renderPolygon(polygons[i])
-  }
-}
-
-const asynced = (f, timeout) =>
+const asynced = (f, timeout = 1) =>
   new Promise(resolve =>
     setTimeout(() => {
       resolve(f())
-    }, 1)
+    }, timeout)
   )
 
 const nextLayer = () => {
@@ -712,6 +688,7 @@ const generate = async cont => {
   generating = true
 
   if (!cont) {
+    index = []
     pos = 0
     polygons.p = settings.p
     polygons.q = settings.q
@@ -746,16 +723,14 @@ const generate = async cont => {
 
   render()
   if (backend === '3d') {
-    if (geometry.attributes.position.count) {
-      geometry.setIndex(index)
-      geometry.attributes.position.needsUpdate = true
-      geometry.attributes.color.needsUpdate = true
-      geometry.setDrawRange(0, pos)
-      geometry.computeVertexNormals()
-      geometry.attributes.normal.needsUpdate = true
-      geometry.computeBoundingBox()
-      geometry.computeBoundingSphere()
-    }
+    geometry.setIndex(index)
+    geometry.setDrawRange(0, pos)
+    geometry.computeBoundingBox()
+    geometry.computeVertexNormals()
+    geometry.attributes.position.needsUpdate = true
+    geometry.attributes.color.needsUpdate = true
+    geometry.attributes.normal.needsUpdate = true
+
     renderer.render(scene, camera)
   }
   generating = false
@@ -806,6 +781,9 @@ const regenerate = cont => {
 }
 
 const render = () => {
+  if (reverting) {
+    return
+  }
   showStats.showStats && stats.begin()
   if (backend === '2d') {
     ctx.globalAlpha = 1
@@ -841,16 +819,18 @@ const render = () => {
     }
   } else {
     for (let o = 0; o < polygons.length; o++) {
-      renderPolygons(polygons[o], o)
+      for (let i = 0, l = polygons[o].length; i < l; i++) {
+        renderPolygon(polygons[o][i])
+      }
     }
   }
 
   if (backend === '3d') {
+    geometry.setDrawRange(0, pos)
+    geometry.computeVertexNormals()
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.color.needsUpdate = true
-    geometry.computeVertexNormals()
     geometry.attributes.normal.needsUpdate = true
-    geometry.setDrawRange(0, pos)
     renderer.render(scene, camera)
   }
 
@@ -866,6 +846,7 @@ gui.remember(settings)
 
 const pqrCheckRegenerate = () => {
   model = getModel(settings)
+  sign = model === 'hyperbolic' ? -1 : 1
   if (reverting) {
     return
   }
@@ -960,6 +941,7 @@ gui.add(
     recenter: () => {
       stop = true
       transformations.length = 0
+      controls.reset()
       regenerate()
     },
   },
