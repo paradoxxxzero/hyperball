@@ -2,7 +2,13 @@ let curvature, tokenPrecision, tokenSize
 
 export const setCurvature = ({ p, q, r }) => {
   const anglesSum = 1 / p + 1 / q + 1 / r
-  curvature = anglesSum === 1 ? 0 : anglesSum < 1 ? -1 : 1
+  if (Math.abs(anglesSum - 1) < 1e-5) {
+    curvature = 0
+  } else if (anglesSum - 1 < 1e-5) {
+    curvature = -1
+  } else {
+    curvature = 1
+  }
 }
 
 export const getCurvature = () => curvature
@@ -103,14 +109,12 @@ export const getRootTriangle = ({ p, q, r }) => {
   const rAngle = Math.PI / r
 
   if (curvature === 0) {
+    const a =
+      Math.cos(pAngle) +
+      (Math.sin(pAngle) * Math.cos(qAngle)) / Math.sin(qAngle)
     return [
       [Math.sin(pAngle), Math.cos(pAngle), 0],
-      [
-        0,
-        (Math.sin(pAngle) - Math.cos(rAngle) / Math.tan(rAngle)) *
-          Math.tan(qAngle),
-        0,
-      ],
+      [0, a, 0],
       [0, 0, 0],
     ]
   }
@@ -280,3 +284,22 @@ const transformations = {
 
 export const transformVertex = (type, vertex, parameter) =>
   transformations[type](vertex, parameter)
+
+const t2s = (t, uv) => Math.sqrt(t * t * (uv * uv - 1) + 1) - curvature * uv * t
+
+export const curve = (u, v, curveStep) => {
+  const vertices = [u]
+  if (curvature) {
+    const uv = dot(u, v)
+    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
+      const s = t2s(t, uv)
+      vertices.push([
+        u[0] * t + v[0] * s,
+        u[1] * t + v[1] * s,
+        u[2] * t + v[2] * s,
+      ])
+    }
+  }
+  vertices.push(v)
+  return vertices
+}

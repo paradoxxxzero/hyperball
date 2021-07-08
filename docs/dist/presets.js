@@ -67,7 +67,7 @@ export default {
         p: 6,
         q: 3,
         r: 2,
-        layers: 15,
+        layers: 1,
         limit: 2500,
         fill: 'colored',
         fillColor: '#000000',

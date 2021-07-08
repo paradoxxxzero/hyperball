@@ -17,11 +17,10 @@ import {
   LineBasicMaterial,
 } from '../_snowpack/pkg/three.js'
 import { OrbitControls } from '../_snowpack/pkg/three/examples/jsm/controls/OrbitControls.js'
-import { projections } from './projections.js'
+import { projections, poincare } from './projections.js'
 import {
   setCurvature,
   setTokenPrecision,
-  dot,
   getRootTriangle,
   getPolygon,
   rotateVertex,
@@ -29,6 +28,8 @@ import {
   scaleVertex,
   transformVertex,
   getCurvature,
+  intersect,
+  curve,
 } from './math.js'
 
 let index = []
@@ -52,6 +53,8 @@ let radius,
   backend,
   stop = false,
   canvas,
+  rootCanvas,
+  rootCtx,
   ctx,
   renderer,
   camera,
@@ -77,6 +80,8 @@ const STROKE_COLOR_TYPES = ['plain', 'colored']
 const init2d = () => {
   canvas = document.createElement('canvas')
   ctx = canvas.getContext('2d')
+  rootCanvas = document.createElement('canvas')
+  rootCtx = rootCanvas.getContext('2d')
 }
 const init3d = () => {
   renderer = new WebGLRenderer({
@@ -106,7 +111,7 @@ const init3d = () => {
   // camera.add(pointLight)
 
   scene.add(camera)
-  controls = new OrbitControls(camera, document.body)
+  controls = new OrbitControls(camera, renderer.domElement)
   controls.minDistance = 0
   controls.maxDistance = 100
 
@@ -204,44 +209,14 @@ const size = () => {
 
 const stats = new Stats()
 const showStats = { showStats: false }
+// const clampW = w => Math.max(Math.min(w, width), 0)
+// const clampH = h => Math.max(Math.min(h, height), 0)
+// const toDiskClamped = ([x, y]) => [clampW(w2 + x * radius), clampH(h2 - y * radius)]
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
 const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
-
-const line = (u, v) => {
-  const curvature = getCurvature()
-  const curve =
-    curvature && settings.projection !== 'klein' && !settings.straight
-  const pu = toDisk(project(u))
-  const pv = toDisk(project(v))
-  const realDist =
-    curve && Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
-  if (curve && realDist > 20 - settings.curvePrecision) {
-    const uv = dot(u, v)
-    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - curvature * uv * t
-    let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / realDist)
-    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
-      const s = t2s(t)
-      const T = [
-        //
-        u[0] * t + v[0] * s,
-        u[1] * t + v[1] * s,
-        u[2] * t + v[2] * s,
-      ]
-      const p = toDisk(project(T))
-      if (
-        settings.projection === 'orthographic' &&
-        (p[0] > width || p[0] < 0 || p[1] > height || p[1] < 0)
-      ) {
-        break
-      }
-      ctx.lineTo(p[0], p[1])
-    }
-  }
-  ctx.lineTo(pv[0], pv[1])
-}
 
 const renderPolygon = ({ vertices, center, order, parity }) => {
   if (vertices.length < 2) {
@@ -319,26 +294,16 @@ const renderPolygon = ({ vertices, center, order, parity }) => {
   }
 
   const curvature = getCurvature()
-  if (curvature > 0) {
-    for (let i = 0; i < settings.p * 2; i++) {
-      renderVertices([
-        center,
-        vertices[i % vertices.length],
-        vertices[(i + 1) % vertices.length],
-      ])
+  let polyVertices = []
+  if (settings.r === 2 && curvature < 0) {
+    // Optimization
+    for (let i = 0; i < settings.p; i++) {
+      polyVertices.push(vertices[(i * 2) % vertices.length])
     }
   } else {
-    let polyVertices = []
-    if (settings.r === 2 && curvature < 0) {
-      // Optimization
-      for (let i = 0; i < settings.p; i++) {
-        polyVertices.push(vertices[(i * 2) % vertices.length])
-      }
-    } else {
-      polyVertices = vertices
-    }
-    renderVertices(polyVertices)
+    polyVertices = vertices
   }
+  renderVertices(polyVertices)
 
   if (settings.wedges) {
     ctx.save()
@@ -361,8 +326,34 @@ const renderVertices = (vertices, isWedge) => {
   const p0 = toDisk(project(vertices[0]))
   ctx.moveTo(p0[0], p0[1])
 
-  for (let j = 0, m = vertices.length; j < m; j++) {
-    line(vertices[j], vertices[(j + 1) % vertices.length])
+  const straight = settings.projection === 'klein' || settings.straight
+  for (let i = 0, m = vertices.length; i < m; i++) {
+    const u = vertices[i]
+    const v = vertices[(i + 1) % m]
+    if (straight) {
+      const p = toDisk(project(v))
+      ctx.lineTo(p[0], p[1])
+    } else {
+      const pu = toDisk(project(u))
+      const pv = toDisk(project(v))
+      const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
+      const curvedVertices = curve(
+        u,
+        v,
+        Math.max(0.01, (20 - settings.curvePrecision) / realDist)
+      )
+
+      for (let j = 1, n = curvedVertices.length; j < n; j++) {
+        const p = toDisk(project(curvedVertices[j]))
+        ctx.lineTo(p[0], p[1])
+        if (
+          settings.projection === 'orthographic' &&
+          (p[0] > width || p[0] < 0 || p[1] > height || p[1] < 0)
+        ) {
+          break
+        }
+      }
+    }
   }
   if (isWedge) {
     if (settings.wedgesFillAlpha) {
@@ -400,88 +391,23 @@ const render3dVertices = (
   const colors = faces.geometry.attributes.color.array
   const lineColors = wireframe.geometry.attributes.color.array
   const lineWedgesColors = wedgesframe.geometry.attributes.color.array
-  const curvature = getCurvature()
-  const inVertices = []
-  const curve =
-    curvature && settings.projection !== 'klein' && !settings.straight
-  if (curve) {
-    const uv = dot(u, v)
-    const t2s = t => Math.sqrt(t * t * (uv * uv - 1) + 1) - curvature * uv * t
-    let curveStep = Math.max(0.01, (20 - settings.curvePrecision) / 50)
-    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
-      const s = t2s(t)
-      const T = [
-        //
-        u[0] * t + v[0] * s,
-        u[1] * t + v[1] * s,
-        u[2] * t + v[2] * s,
-      ]
-      inVertices.push(T)
-    }
-  }
+  const curved = settings.projection !== 'klein' && !settings.straight
+  const vertices = curved
+    ? curve(u, v, Math.max(0.01, (20 - settings.curvePrecision) / 50))
+    : [u, v]
+
+  vertices.unshift(center)
 
   const centerPos = pos
-  positions[pos * 3] = center[0]
-  positions[pos * 3 + 1] = center[1]
-  positions[pos * 3 + 2] = center[2]
 
-  if (faces.visible) {
-    colors[pos * 3] = fillColor.r
-    colors[pos * 3 + 1] = fillColor.g
-    colors[pos * 3 + 2] = fillColor.b
-  }
-
-  if (wireframe.visible) {
-    lineColors[pos * 3] = strokeColor.r
-    lineColors[pos * 3 + 1] = strokeColor.g
-    lineColors[pos * 3 + 2] = strokeColor.b
-  }
-
-  if (wedgesframe.visible) {
-    lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-    lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-    lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-    lineWedgesIndex.push(pos)
-  }
-
-  pos++
-
-  positions[pos * 3] = u[0]
-  positions[pos * 3 + 1] = u[1]
-  positions[pos * 3 + 2] = u[2]
-
-  if (faces.visible) {
-    colors[pos * 3] = fillColor.r
-    colors[pos * 3 + 1] = fillColor.g
-    colors[pos * 3 + 2] = fillColor.b
-  }
-
-  if (wireframe.visible) {
-    lineColors[pos * 3] = strokeColor.r
-    lineColors[pos * 3 + 1] = strokeColor.g
-    lineColors[pos * 3 + 2] = strokeColor.b
-    lineIndex.push(pos)
-    lineIndex.push(pos)
-  }
-
-  if (wedgesframe.visible) {
-    lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-    lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-    lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-    lineWedgesIndex.push(pos)
-    lineWedgesIndex.push(pos)
-  }
-
-  pos++
-
-  for (let j = 0, m = inVertices.length; j < m; j++) {
-    const p = inVertices[j]
-    positions[pos * 3] = p[0]
-    positions[pos * 3 + 1] = p[1]
-    positions[pos * 3 + 2] = p[2]
+  for (let j = 0, m = vertices.length; j < m; j++) {
+    const vertex = vertices[j]
+    positions[pos * 3] = vertex[0]
+    positions[pos * 3 + 1] = vertex[1]
+    positions[pos * 3 + 2] = vertex[2]
 
     if (faces.visible) {
-      index.push(centerPos, pos - 1, pos)
+      j > 1 && index.push(centerPos, pos - 1, pos)
       colors[pos * 3] = fillColor.r
       colors[pos * 3 + 1] = fillColor.g
       colors[pos * 3 + 2] = fillColor.b
@@ -491,48 +417,23 @@ const render3dVertices = (
       lineColors[pos * 3] = strokeColor.r
       lineColors[pos * 3 + 1] = strokeColor.g
       lineColors[pos * 3 + 2] = strokeColor.b
-      lineIndex.push(pos)
-      lineIndex.push(pos)
+      j > 0 && lineIndex.push(pos)
+      j > 0 && lineIndex.push(pos)
     }
 
     if (wedgesframe.visible) {
       lineWedgesColors[pos * 3] = wedgesStrokeColor.r
       lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
       lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-      lineWedgesIndex.push(pos)
+      j > 0 && lineWedgesIndex.push(pos)
       lineWedgesIndex.push(pos)
     }
     pos++
   }
 
-  positions[pos * 3] = v[0]
-  positions[pos * 3 + 1] = v[1]
-  positions[pos * 3 + 2] = v[2]
-
-  if (faces.visible) {
-    index.push(centerPos, pos - 1, pos)
-    colors[pos * 3] = fillColor.r
-    colors[pos * 3 + 1] = fillColor.g
-    colors[pos * 3 + 2] = fillColor.b
-  }
-
-  if (wireframe.visible) {
-    lineColors[pos * 3] = strokeColor.r
-    lineColors[pos * 3 + 1] = strokeColor.g
-    lineColors[pos * 3 + 2] = strokeColor.b
-    lineIndex.push(pos)
-    lineIndex.push(pos)
-  }
-
   if (wedgesframe.visible) {
-    lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-    lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-    lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-    lineWedgesIndex.push(pos)
-    lineWedgesIndex.push(pos)
     lineWedgesIndex.push(centerPos)
   }
-  pos++
 }
 
 const createPolygon = (triangle, order) => {
@@ -582,6 +483,8 @@ const generate = async cont => {
   if (generating) {
     return
   }
+
+  renderRootTriangle()
 
   generating = true
 
@@ -732,6 +635,51 @@ const clear = () => {
   }
 }
 
+const renderRootTriangle = () => {
+  rootCtx.clearRect(0, 0, 100, 100)
+  const precision = 0.01
+
+  const curvature = getCurvature()
+  let triangle = getRootTriangle(settings)
+  if (curvature) {
+    triangle = [
+      intersect(triangle[0], triangle[1]),
+      intersect(triangle[0], triangle[2]),
+      intersect(triangle[2], triangle[1]),
+    ]
+  }
+
+  rootCtx.fillStyle = 'rgb(100, 100, 100)'
+  rootCtx.strokeStyle = 'rgb(255, 255, 255)'
+  rootCtx.lineWidth = 2
+  rootCtx.beginPath()
+
+  let points = []
+  points.push(...curve(triangle[0], triangle[1], precision))
+  points.push(...curve(triangle[1], triangle[2], precision))
+  points.push(...curve(triangle[2], triangle[0], precision))
+
+  points = points.map(poincare)
+  if (curvature > 0) {
+    points = points.map(([x, y]) => [-curvature * x, -curvature * y])
+  }
+  const ymin = Math.min(...points.map(p => p[1]))
+  const ymax = Math.max(...points.map(p => p[1]))
+  const xmin = Math.min(...points.map(p => p[0]))
+  const xmax = Math.max(...points.map(p => p[0]))
+  const r = Math.max(xmax - xmin, ymax - ymin)
+  const root = ([x, y]) => [
+    10 + ((x - ymin) / r) * 80,
+    100 - (10 + ((y - ymin) / r) * 80),
+  ]
+  rootCtx.moveTo(...root(points[0]))
+  for (let i = 1; i < points.length; i++) {
+    rootCtx.lineTo(...root(points[i]))
+  }
+  rootCtx.fill()
+  rootCtx.stroke()
+}
+
 const render = () => {
   if (reverting) {
     return
@@ -792,7 +740,6 @@ const render = () => {
     }
 
     renderer.render(scene, camera)
-    console.log(pos)
   }
 
   showStats.showStats && stats.end()
@@ -848,7 +795,7 @@ const gui = new GUI({
 
 gui.remember(settings)
 
-const pqrCheckRegenerate = () => {
+const pqrChange = () => {
   setCurvature(settings)
 
   if (reverting) {
@@ -930,9 +877,9 @@ gui
     }
     size()
   })
-gui.add(settings, 'p', 2, 20, 1).onChange(pqrCheckRegenerate)
-gui.add(settings, 'q', 2, 20, 1).onChange(pqrCheckRegenerate)
-gui.add(settings, 'r', 2, 20, 1).onChange(pqrCheckRegenerate)
+gui.add(settings, 'p', 2, 20, 1).onChange(pqrChange)
+gui.add(settings, 'q', 2, 20, 1).onChange(pqrChange)
+gui.add(settings, 'r', 2, 20, 1).onChange(pqrChange)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 
@@ -1003,11 +950,6 @@ gui.revert = () => {
   regenerate()
 }
 
-init2d()
-init3d()
-
-gui.revert()
-
 interact(document.body)
   .draggable({
     listeners: {
@@ -1037,6 +979,9 @@ interact(document.body)
     },
   })
 
+init2d()
+init3d()
+
 window.ondeviceorientation = window.onresize = size
 window.hyperball = {
   polygons,
@@ -1057,11 +1002,21 @@ window.hyperball = {
 
 renderer.domElement.id = 'c3d'
 canvas.id = 'c2d'
+rootCanvas.id = 'rc2d'
+rootCanvas.width = 100
+rootCanvas.height = 100
+rootCanvas.style.position = 'fixed'
+rootCanvas.style.bottom = 0
+rootCanvas.style.right = 0
+
 document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
+document.body.appendChild(rootCanvas)
 document.body.appendChild(stats.dom)
-stats.showPanel(null)
 
+gui.revert()
+
+stats.showPanel(null)
 renderer.setAnimationLoop(() => {
   if (backend === '3d') {
     renderer.render(scene, camera)
