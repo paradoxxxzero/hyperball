@@ -973,9 +973,11 @@ interact(document.body)
   })
   .gesturable({
     onmove: e => {
-      rotate(-(Math.PI * e.da) / 180)
-      scale(-e.ds)
-      render()
+      if (backend !== '3d') {
+        rotate(-(Math.PI * e.da) / 180)
+        scale(-e.ds)
+        render()
+      }
     },
   })
 
