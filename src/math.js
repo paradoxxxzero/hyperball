@@ -66,8 +66,8 @@ export const getToken = triangle => {
 }
 
 export const reflectOn = (triangle, i, order, check, tokens) => {
-  let j = (i + 1) % 3
-  let k = (i + 2) % 3
+  const j = (i + 1) % 3
+  const k = (i + 2) % 3
 
   if (curvature === 0) {
     triangle[i] = reflect(

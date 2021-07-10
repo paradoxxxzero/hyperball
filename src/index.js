@@ -644,11 +644,11 @@ const renderRootTriangle = () => {
 
   const triangle = curvature
     ? [
-        intersect(edges[0], edges[2]),
         intersect(edges[0], edges[1]),
+        intersect(edges[0], edges[2]),
         intersect(edges[2], edges[1]),
       ]
-    : edges
+    : [edges[2], edges[1], edges[0]]
 
   const points = triangle.map(rootProject)
   const xmax = Math.max(...points.map(p => p[0]))
@@ -674,19 +674,19 @@ const renderRootTriangle = () => {
 
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
-    rootCtx.fillStyle = `hsl(${60 + i * 120}deg, 50%, 60%)`
+    const j = (i + 1) % 3
+    const k = (i + 2) % 3
+    const p = ((curvature ? 3 : 4) - i) % 3
+    rootCtx.fillStyle = `hsl(${((p + 2) % 3) * 120}deg, 50%, 60%)`
     rootCtx.beginPath()
-    let perp1 = perp(wythoff, edges[i], edges[(i + 1) % 3])
-    let perp2 = perp(wythoff, edges[(i + 1) % 3], edges[(i + 2) % 3])
+    const perp1 = perp(wythoff, edges[i], edges[j])
+    const perp2 = perp(wythoff, edges[j], edges[k])
 
-    curveChain(wythoff, perp1, triangle[(i + 4) % 3], perp2, wythoff)
+    curveChain(wythoff, perp1, triangle[p], perp2, wythoff)
 
     rootCtx.fill()
     rootCtx.stroke()
   }
-
-  rootCtx.fillStyle = 'rgb(255, 125, 125)'
-  rootCtx.fillRect(...root(rootProject(wythoff)).map(c => c - 3), 6, 6)
 }
 
 const render = () => {
