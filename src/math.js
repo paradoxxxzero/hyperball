@@ -17,12 +17,12 @@ export const setTokenPrecision = precision => {
   tokenPrecision = precision
   tokenSize = 10 ** precision
 }
-export const normalize = ([x, y, z]) => {
-  const nr = curvature * x * x + curvature * y * y + z * z
+export const normalize = ([x, y, z], c = curvature) => {
+  const nr = c * x * x + c * y * y + z * z
   if (nr === 0) {
     return [0, 0, 0]
   }
-  const k = (curvature === -1 ? Math.sign(z) : 1) / Math.sqrt(nr)
+  const k = (c === -1 ? Math.sign(z) : 1) / Math.sqrt(nr)
   return [x * k, y * k, z * k]
 }
 
@@ -302,4 +302,22 @@ export const curve = (u, v, curveStep) => {
   }
   vertices.push(v)
   return vertices
+}
+
+export const perp = (w, a, b) => {
+  if (curvature === 0) {
+    if (a[0] === b[0]) {
+      return [0, w[1], 0]
+    }
+    const alpha = (b[1] - a[1]) / (b[0] - a[0])
+    const alpha2 = alpha * alpha
+    const nr = 1 / (1 + alpha2)
+    return [
+      nr * (alpha2 * a[0] + alpha * (w[1] - a[1]) + w[0]),
+      nr * (alpha2 * w[1] + alpha * (w[0] - a[0]) + a[1]),
+      0,
+    ]
+  } else {
+    return intersect(normalize(cross(a, w), 1), a)
+  }
 }
