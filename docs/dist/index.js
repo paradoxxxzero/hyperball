@@ -30,6 +30,7 @@ import {
   getCurvature,
   intersect,
   curve,
+  perp,
 } from './math.js'
 
 let index = []
@@ -62,7 +63,10 @@ let radius,
   scene,
   faces,
   wireframe,
-  wedgesframe
+  wedgesframe,
+  rootSize = 150,
+  rootRatio,
+  wythoff
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -73,6 +77,7 @@ const settings = {
 
 setTokenPrecision(settings.tokenPrecision)
 setCurvature(settings)
+wythoff = [0, 0, Math.abs(getCurvature())]
 
 const FILL_COLOR_TYPES = ['plain', 'odd', 'colored']
 const STROKE_COLOR_TYPES = ['plain', 'colored']
@@ -323,19 +328,14 @@ const renderPolygon = ({ vertices, center, order, parity }) => {
 const renderVertices = (vertices, isWedge) => {
   ctx.beginPath()
 
-  const p0 = toDisk(project(vertices[0]))
-  ctx.moveTo(p0[0], p0[1])
-
   const straight = settings.projection === 'klein' || settings.straight
   for (let i = 0, m = vertices.length; i < m; i++) {
     const u = vertices[i]
+    const pu = toDisk(project(u))
     const v = vertices[(i + 1) % m]
-    if (straight) {
-      const p = toDisk(project(v))
-      ctx.lineTo(p[0], p[1])
-    } else {
-      const pu = toDisk(project(u))
-      const pv = toDisk(project(v))
+    const pv = toDisk(project(v))
+    ctx.lineTo(pu[0], pu[1])
+    if (!straight) {
       const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
       const curvedVertices = curve(
         u,
@@ -354,6 +354,7 @@ const renderVertices = (vertices, isWedge) => {
         }
       }
     }
+    ctx.lineTo(pv[0], pv[1])
   }
   if (isWedge) {
     if (settings.wedgesFillAlpha) {
@@ -484,8 +485,6 @@ const generate = async cont => {
     return
   }
 
-  renderRootTriangle()
-
   generating = true
 
   if (!cont) {
@@ -563,6 +562,7 @@ const regenerate = cont => {
   if (reverting) {
     return
   }
+  renderRootTriangle()
   if (!generating) {
     if (!cont) {
       stop = false
@@ -636,48 +636,57 @@ const clear = () => {
 }
 
 const renderRootTriangle = () => {
-  rootCtx.clearRect(0, 0, 100, 100)
   const precision = 0.01
+  const rootProject = p => poincare(p).map(c => (curvature > 0 ? -c : c))
 
   const curvature = getCurvature()
-  let triangle = getRootTriangle(settings)
-  if (curvature) {
-    triangle = [
-      intersect(triangle[0], triangle[1]),
-      intersect(triangle[0], triangle[2]),
-      intersect(triangle[2], triangle[1]),
-    ]
-  }
+  const edges = getRootTriangle(settings)
 
-  rootCtx.fillStyle = 'rgb(100, 100, 100)'
-  rootCtx.strokeStyle = 'rgb(255, 255, 255)'
-  rootCtx.lineWidth = 2
-  rootCtx.beginPath()
+  const triangle = curvature
+    ? [
+        intersect(edges[0], edges[2]),
+        intersect(edges[0], edges[1]),
+        intersect(edges[2], edges[1]),
+      ]
+    : edges
 
-  let points = []
-  points.push(...curve(triangle[0], triangle[1], precision))
-  points.push(...curve(triangle[1], triangle[2], precision))
-  points.push(...curve(triangle[2], triangle[0], precision))
-
-  points = points.map(poincare)
-  if (curvature > 0) {
-    points = points.map(([x, y]) => [-curvature * x, -curvature * y])
-  }
-  const ymin = Math.min(...points.map(p => p[1]))
-  const ymax = Math.max(...points.map(p => p[1]))
-  const xmin = Math.min(...points.map(p => p[0]))
+  const points = triangle.map(rootProject)
   const xmax = Math.max(...points.map(p => p[0]))
-  const r = Math.max(xmax - xmin, ymax - ymin)
-  const root = ([x, y]) => [
-    10 + ((x - ymin) / r) * 80,
-    100 - (10 + ((y - ymin) / r) * 80),
-  ]
-  rootCtx.moveTo(...root(points[0]))
-  for (let i = 1; i < points.length; i++) {
-    rootCtx.lineTo(...root(points[i]))
+  const ymax = Math.max(...points.map(p => p[1]))
+  const max = Math.max(xmax, ymax)
+  rootRatio = rootSize / max
+
+  const root = ([x, y]) => [x * rootRatio, rootSize - y * rootRatio]
+
+  rootCanvas.width = xmax * rootRatio + 5
+  rootCtx.lineWidth = 2
+
+  const draw = c => {
+    for (let i = 0; i < c.length; i++) {
+      rootCtx.lineTo(...root(rootProject(c[i])))
+    }
   }
-  rootCtx.fill()
-  rootCtx.stroke()
+  const curveChain = (...points) => {
+    for (let i = 0; i < points.length - 1; i++) {
+      draw(curve(points[i], points[i + 1], precision))
+    }
+  }
+
+  rootCtx.strokeStyle = settings.strokeColor
+  for (let i = 0; i < 3; i++) {
+    rootCtx.fillStyle = `hsl(${60 + i * 120}deg, 50%, 60%)`
+    rootCtx.beginPath()
+    let perp1 = perp(wythoff, edges[i], edges[(i + 1) % 3])
+    let perp2 = perp(wythoff, edges[(i + 1) % 3], edges[(i + 2) % 3])
+
+    curveChain(wythoff, perp1, triangle[(i + 4) % 3], perp2, wythoff)
+
+    rootCtx.fill()
+    rootCtx.stroke()
+  }
+
+  rootCtx.fillStyle = 'rgb(255, 125, 125)'
+  rootCtx.fillRect(...root(rootProject(wythoff)).map(c => c - 3), 6, 6)
 }
 
 const render = () => {
@@ -797,6 +806,7 @@ gui.remember(settings)
 
 const pqrChange = () => {
   setCurvature(settings)
+  wythoff = [0, 0, Math.abs(getCurvature())]
 
   if (reverting) {
     return
@@ -973,9 +983,11 @@ interact(document.body)
   })
   .gesturable({
     onmove: e => {
-      rotate(-(Math.PI * e.da) / 180)
-      scale(-e.ds)
-      render()
+      if (backend !== '3d') {
+        rotate(-(Math.PI * e.da) / 180)
+        scale(-e.ds)
+        render()
+      }
     },
   })
 
@@ -1003,16 +1015,44 @@ window.hyperball = {
 renderer.domElement.id = 'c3d'
 canvas.id = 'c2d'
 rootCanvas.id = 'rc2d'
-rootCanvas.width = 100
-rootCanvas.height = 100
+rootCanvas.width = rootSize
+rootCanvas.height = rootSize
 rootCanvas.style.position = 'fixed'
 rootCanvas.style.bottom = 0
-rootCanvas.style.right = 0
+rootCanvas.style.left = 0
+rootCanvas.style.cursor = 'pointer'
+rootCanvas.style.marginLeft = '15px'
+rootCanvas.style.marginBottom = '15px'
 
 document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
 document.body.appendChild(rootCanvas)
 document.body.appendChild(stats.dom)
+
+const fromPoincare = ([x, y]) => {
+  const curvature = getCurvature()
+  if (!curvature) {
+    return [x, y, 0]
+  } else {
+    const s = -curvature * (x * x + y * y)
+    const nr = 1 / (1 - s)
+    return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
+  }
+}
+
+rootCanvas.addEventListener('click', e => {
+  const curvature = getCurvature()
+  const { left, top } = e.target.getBoundingClientRect()
+  const x = e.clientX - left
+  const y = e.clientY - top
+  const nr = 1 / rootRatio
+  let u = [x * nr, (rootSize - y) * nr]
+  if (curvature > 0) {
+    u = u.map(c => -c)
+  }
+  wythoff = fromPoincare(u)
+  regenerate()
+})
 
 gui.revert()
 
