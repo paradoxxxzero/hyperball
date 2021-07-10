@@ -223,7 +223,7 @@ const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
 
-const renderPolygon = ({ vertices, center, order, parity }) => {
+const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (vertices.length < 2) {
     return
   }
@@ -323,6 +323,14 @@ const renderPolygon = ({ vertices, center, order, parity }) => {
       )
     }
     ctx.restore()
+  }
+
+  // W
+  ctx.fillStyle = 'white'
+  const s = 2
+  for (let i = 0; i < wythoffs.length; i++) {
+    const w = toDisk(project(wythoffs[i]))
+    ctx.fillRect(w[0] - s, w[1] - s, 2 * s, 2 * s)
   }
 }
 const renderVertices = (vertices, isWedge) => {
@@ -520,6 +528,7 @@ const generate = async cont => {
     }
     if (polygons.length === 0) {
       const root = getRootTriangle(settings)
+      root.push(wythoff)
       root.parity = 0
       createPolygon(root, 0)
     } else {

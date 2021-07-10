@@ -68,9 +68,9 @@ export const getToken = triangle => {
 export const reflectOn = (triangle, i, order, check, tokens) => {
   const j = (i + 1) % 3
   const k = (i + 2) % 3
-
+  const newTriangle = [[], [], [], []]
   if (curvature === 0) {
-    triangle[i] = reflect(
+    newTriangle[i] = reflect(
       [
         triangle[j][0] - triangle[i][0],
         triangle[j][1] - triangle[i][1],
@@ -82,25 +82,56 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
         triangle[k][2] - triangle[j][2],
       ]
     )
-    triangle[i][0] += triangle[j][0]
-    triangle[i][1] += triangle[j][1]
-    triangle[i][2] += triangle[j][2]
+    newTriangle[i][0] += triangle[j][0]
+    newTriangle[i][1] += triangle[j][1]
+    newTriangle[i][2] += triangle[j][2]
+    newTriangle[j][0] = triangle[j][0]
+    newTriangle[j][1] = triangle[j][1]
+    newTriangle[j][2] = triangle[j][2]
+    newTriangle[k][0] = triangle[k][0]
+    newTriangle[k][1] = triangle[k][1]
+    newTriangle[k][2] = triangle[k][2]
+    // wythoff
+    newTriangle[3] = reflect(
+      [
+        triangle[j][0] - triangle[3][0],
+        triangle[j][1] - triangle[3][1],
+        triangle[j][2] - triangle[3][2],
+      ],
+      [
+        triangle[k][0] - triangle[j][0],
+        triangle[k][1] - triangle[j][1],
+        triangle[k][2] - triangle[j][2],
+      ]
+    )
+    newTriangle[3][0] += triangle[j][0]
+    newTriangle[3][1] += triangle[j][1]
+    newTriangle[3][2] += triangle[j][2]
   } else {
-    triangle[j] = reflect(triangle[j], triangle[i])
-    triangle[k] = reflect(triangle[k], triangle[i])
-    triangle[i] = [-triangle[i][0], -triangle[i][1], -triangle[i][2]]
+    newTriangle[j] = reflect(triangle[j], triangle[i])
+    newTriangle[k] = reflect(triangle[k], triangle[i])
+    const wyt = triangle[3]
+    let wytj = normalize(cross(triangle[j], wyt), 1)
+    let wytk = normalize(cross(triangle[k], wyt), 1)
+    wytj = reflect(wytj, triangle[i])
+    wytk = reflect(wytk, triangle[i])
+    newTriangle[3] = intersect(wytj, wytk)
+
+    newTriangle[i][0] = -triangle[i][0]
+    newTriangle[i][1] = -triangle[i][1]
+    newTriangle[i][2] = -triangle[i][2]
   }
 
-  const token = getToken(triangle, tokenSize)
+  const token = getToken(newTriangle, tokenSize)
   if (check) {
     for (let i = order; i >= 0; i--) {
       if (tokens[i][token]) {
-        return false
+        return
       }
     }
   }
   tokens[order][token] = true
-  return true
+  return newTriangle
 }
 
 export const getRootTriangle = ({ p, q, r }) => {
@@ -145,14 +176,14 @@ export const getRootTriangle = ({ p, q, r }) => {
 export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
   const parity = triangle.parity
   const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
-  triangle = [...triangle]
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
   tokens[order] = tokens[order] || {}
 
   const vertices = []
+  const wythoffs = []
   if (order > 0) {
-    if (!reflectOn(triangle, 2, order, true, tokens)) {
+    if (!(triangle = reflectOn(triangle, 2, order, true, tokens))) {
       return
     }
   } else {
@@ -169,18 +200,20 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
     vertices.push(intx(triangle[0], triangle[2]))
     vertices.push(intx(triangle[2], triangle[1]))
   }
+  wythoffs.push([...triangle[3]])
 
   const rootEdges = [...triangle]
   rootEdges.parity = 1 - parity
   triangles[order].push(rootEdges)
 
   for (let n = 0; n < p * 2 - 1; n++) {
-    reflectOn(triangle, (n + 1) % 2, order, false, tokens)
+    triangle = reflectOn(triangle, (n + 1) % 2, order, false, tokens)
     if (!curvature) {
       vertices.push([...triangle[(n + 1) % 2]])
     } else {
       vertices.push(intx(triangle[2], triangle[n % 2]))
     }
+    wythoffs.push([...triangle[3]])
     const subEdges = [...triangle]
     subEdges.parity = n % 2 === 0 ? parity : 1 - parity
     triangles[order].push(subEdges)
@@ -189,6 +222,7 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
   const polygon = {
     vertices,
     center,
+    wythoffs,
     order,
     parity,
   }
