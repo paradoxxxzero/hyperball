@@ -30,7 +30,7 @@ import {
   getCurvature,
   intersect,
   curve,
-  perp,
+  perps,
 } from './math.js'
 
 let index = []
@@ -223,7 +223,7 @@ const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
 
-const renderPolygon = ({ vertices, center, order, parity }) => {
+const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (vertices.length < 2) {
     return
   }
@@ -299,30 +299,54 @@ const renderPolygon = ({ vertices, center, order, parity }) => {
   }
 
   const curvature = getCurvature()
-  let polyVertices = []
-  if (settings.r === 2 && curvature < 0) {
-    // Optimization
-    for (let i = 0; i < settings.p; i++) {
-      polyVertices.push(vertices[(i * 2) % vertices.length])
-    }
-  } else {
-    polyVertices = vertices
-  }
-  renderVertices(polyVertices)
+  // let polyVertices = []
+  // if (settings.r === 2 && curvature < 0) {
+  //   // Optimization
+  //   for (let i = 0; i < settings.p; i++) {
+  //     polyVertices.push(vertices[(i * 2) % vertices.length])
+  //   }
+  // } else {
+  //   polyVertices = vertices
+  // }
+  // renderVertices(polyVertices)
 
-  if (settings.wedges) {
-    ctx.save()
-    for (let i = 0; i < settings.p; i++) {
-      renderVertices(
-        [
-          center,
-          vertices[(i * 2 + parity) % vertices.length],
-          vertices[(i * 2 + parity + 1) % vertices.length],
-        ],
-        true
-      )
+  // if (settings.wedges) {
+  //   ctx.save()
+  //   for (let i = 0; i < settings.p; i++) {
+  //     renderVertices(
+  //       [
+  //         center,
+  //         vertices[(i * 2 + parity) % vertices.length],
+  //         vertices[(i * 2 + parity + 1) % vertices.length],
+  //       ],
+  //       true
+  //     )
+  //   }
+  //   ctx.restore()
+  // }
+
+  // W
+  for (let i = 0; i < settings.p * 2; i++) {
+    const wythoff = wythoffs[i]
+
+    for (let j = 0; j < 3; j++) {
+      const vert =
+        i % 2
+          ? [center, vertices[i + 1], vertices[i]]
+          : [center, vertices[i], vertices[1 + i]]
+      const p = ((curvature ? 3 : 4) - j) % 3
+      ctx.fillStyle = `hsl(${
+        order * settings.fillColorShift + ((p + 2) % 3) * 120
+      }deg, 50%, ${i % 2 ? 60 : 40}%)`
+
+      renderVertices([
+        wythoff[0],
+        wythoff[1 + j],
+        vert[p],
+        wythoff[1 + ((j + 1) % 3)],
+        wythoff[0],
+      ])
     }
-    ctx.restore()
   }
 }
 const renderVertices = (vertices, isWedge) => {
@@ -461,6 +485,12 @@ const createPolygon = (triangle, order) => {
     for (let v = 0; v < polygon.vertices.length; v++) {
       transformVertex(type, polygon.vertices[v], parameter)
     }
+
+    for (let j = 0; j < polygon.wythoffs.length; j++) {
+      for (let l = 0; l < polygon.wythoffs[j].length; l++) {
+        transformVertex(type, polygon.wythoffs[j][l], parameter)
+      }
+    }
   }
   renderPolygon(polygon)
 }
@@ -478,6 +508,12 @@ const nextLayer = () => {
   return Promise.all(
     lastTriangles.map(triangle => asynced(() => createPolygon(triangle, order)))
   )
+}
+const getWythoffTriangle = ({ p, q, r }) => {
+  const root = getRootTriangle({ p, q, r })
+
+  root.push(...perps(wythoff, root))
+  return root
 }
 
 const generate = async cont => {
@@ -519,7 +555,7 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      const root = getRootTriangle(settings)
+      const root = getWythoffTriangle(settings)
       root.parity = 0
       createPolygon(root, 0)
     } else {
@@ -640,15 +676,19 @@ const renderRootTriangle = () => {
   const rootProject = p => poincare(p).map(c => (curvature > 0 ? -c : c))
 
   const curvature = getCurvature()
-  const edges = getRootTriangle(settings)
+  const edges = getWythoffTriangle(settings)
 
   const triangle = curvature
     ? [
-        intersect(edges[0], edges[2]),
         intersect(edges[0], edges[1]),
+        intersect(edges[0], edges[2]),
         intersect(edges[2], edges[1]),
+        edges[3],
+        intersect(edges[4], edges[0]),
+        intersect(edges[5], edges[1]),
+        intersect(edges[6], edges[2]),
       ]
-    : edges
+    : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
 
   const points = triangle.map(rootProject)
   const xmax = Math.max(...points.map(p => p[0]))
@@ -674,19 +714,21 @@ const renderRootTriangle = () => {
 
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
-    rootCtx.fillStyle = `hsl(${60 + i * 120}deg, 50%, 60%)`
+    const p = ((curvature ? 3 : 4) - i) % 3
+    rootCtx.fillStyle = `hsl(${((p + 2) % 3) * 120}deg, 50%, 60%)`
     rootCtx.beginPath()
-    let perp1 = perp(wythoff, edges[i], edges[(i + 1) % 3])
-    let perp2 = perp(wythoff, edges[(i + 1) % 3], edges[(i + 2) % 3])
 
-    curveChain(wythoff, perp1, triangle[(i + 4) % 3], perp2, wythoff)
+    curveChain(
+      wythoff,
+      triangle[4 + i],
+      triangle[p],
+      triangle[4 + ((i + 1) % 3)],
+      wythoff
+    )
 
     rootCtx.fill()
     rootCtx.stroke()
   }
-
-  rootCtx.fillStyle = 'rgb(255, 125, 125)'
-  rootCtx.fillRect(...root(rootProject(wythoff)).map(c => c - 3), 6, 6)
 }
 
 const render = () => {
@@ -760,10 +802,15 @@ const translate = offset => {
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
-      const { vertices, center } = orderPolygons[i]
+      const { vertices, center, wythoffs } = orderPolygons[i]
       translateVertex(center, offset)
       for (let j = 0; j < vertices.length; j++) {
         translateVertex(vertices[j], offset)
+      }
+      for (let j = 0; j < wythoffs.length; j++) {
+        for (let l = 0; l < wythoffs[j].length; l++) {
+          translateVertex(wythoffs[j][l], offset)
+        }
       }
     }
   }
@@ -773,10 +820,15 @@ const rotate = theta => {
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
-      const { vertices, center } = orderPolygons[i]
+      const { vertices, center, wythoffs } = orderPolygons[i]
       rotateVertex(center, theta)
       for (let j = 0; j < vertices.length; j++) {
         rotateVertex(vertices[j], theta)
+      }
+      for (let j = 0; j < wythoffs.length; j++) {
+        for (let l = 0; l < wythoffs[j].length; l++) {
+          rotateVertex(wythoffs[j][l], theta)
+        }
       }
     }
   }
@@ -788,10 +840,15 @@ const scale = factor => {
   for (let o = 0; o < polygons.length; o++) {
     const orderPolygons = polygons[o]
     for (let i = 0; i < orderPolygons.length; i++) {
-      const { vertices, center } = orderPolygons[i]
+      const { vertices, center, wythoffs } = orderPolygons[i]
       scaleVertex(center, factor)
       for (let j = 0; j < vertices.length; j++) {
         scaleVertex(vertices[j], factor)
+      }
+      for (let j = 0; j < wythoffs.length; j++) {
+        for (let l = 0; l < wythoffs[j].length; l++) {
+          scaleVertex(wythoffs[j][l], factor)
+        }
       }
     }
   }
