@@ -1017,7 +1017,7 @@ gui.revert = () => {
   regenerate()
 }
 
-interact(document.body)
+interact('canvas')
   .draggable({
     listeners: {
       move: e => {
@@ -1097,7 +1097,7 @@ const fromPoincare = ([x, y]) => {
   }
 }
 
-rootCanvas.addEventListener('click', e => {
+const wyth = e => {
   const curvature = getCurvature()
   const { left, top } = e.target.getBoundingClientRect()
   const x = e.clientX - left
@@ -1109,7 +1109,25 @@ rootCanvas.addEventListener('click', e => {
   }
   wythoff = fromPoincare(u)
   regenerate()
-})
+  e.stopPropagation()
+}
+rootCanvas.addEventListener(
+  'pointerdown',
+  e => {
+    wyth(e)
+    rootCanvas.addEventListener('pointermove', wyth, true)
+    rootCanvas.setPointerCapture(e.pointerId)
+  },
+  true
+)
+rootCanvas.addEventListener(
+  'pointerup',
+  e => {
+    rootCanvas.removeEventListener('pointermove', wyth, true)
+    rootCanvas.releasePointerCapture(e.pointerId)
+  },
+  true
+)
 
 gui.revert()
 
