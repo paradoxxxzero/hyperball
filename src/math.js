@@ -70,21 +70,23 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
   const k = (i + 2) % 3
   const newTriangle = [[], [], [], []]
   if (curvature === 0) {
+    const reflector = [
+      triangle[k][0] - triangle[j][0],
+      triangle[k][1] - triangle[j][1],
+      triangle[k][2] - triangle[j][2],
+    ]
     newTriangle[i] = reflect(
       [
         triangle[j][0] - triangle[i][0],
         triangle[j][1] - triangle[i][1],
         triangle[j][2] - triangle[i][2],
       ],
-      [
-        triangle[k][0] - triangle[j][0],
-        triangle[k][1] - triangle[j][1],
-        triangle[k][2] - triangle[j][2],
-      ]
+      reflector
     )
     newTriangle[i][0] += triangle[j][0]
     newTriangle[i][1] += triangle[j][1]
     newTriangle[i][2] += triangle[j][2]
+
     newTriangle[j][0] = triangle[j][0]
     newTriangle[j][1] = triangle[j][1]
     newTriangle[j][2] = triangle[j][2]
@@ -98,24 +100,58 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
         triangle[j][1] - triangle[3][1],
         triangle[j][2] - triangle[3][2],
       ],
-      [
-        triangle[k][0] - triangle[j][0],
-        triangle[k][1] - triangle[j][1],
-        triangle[k][2] - triangle[j][2],
-      ]
+      reflector
     )
     newTriangle[3][0] += triangle[j][0]
     newTriangle[3][1] += triangle[j][1]
     newTriangle[3][2] += triangle[j][2]
+    newTriangle[4] = reflect(
+      [
+        triangle[j][0] - triangle[4][0],
+        triangle[j][1] - triangle[4][1],
+        triangle[j][2] - triangle[4][2],
+      ],
+      reflector
+    )
+    newTriangle[4][0] += triangle[j][0]
+    newTriangle[4][1] += triangle[j][1]
+    newTriangle[4][2] += triangle[j][2]
+    newTriangle[5] = reflect(
+      [
+        triangle[j][0] - triangle[5][0],
+        triangle[j][1] - triangle[5][1],
+        triangle[j][2] - triangle[5][2],
+      ],
+      reflector
+    )
+    newTriangle[5][0] += triangle[j][0]
+    newTriangle[5][1] += triangle[j][1]
+    newTriangle[5][2] += triangle[j][2]
+    newTriangle[6] = reflect(
+      [
+        triangle[j][0] - triangle[6][0],
+        triangle[j][1] - triangle[6][1],
+        triangle[j][2] - triangle[6][2],
+      ],
+      reflector
+    )
+    newTriangle[6][0] += triangle[j][0]
+    newTriangle[6][1] += triangle[j][1]
+    newTriangle[6][2] += triangle[j][2]
   } else {
     newTriangle[j] = reflect(triangle[j], triangle[i])
     newTriangle[k] = reflect(triangle[k], triangle[i])
+    // TODO: Needed ?
     const wyt = triangle[3]
     let wytj = normalize(cross(triangle[j], wyt), 1)
     let wytk = normalize(cross(triangle[k], wyt), 1)
     wytj = reflect(wytj, triangle[i])
     wytk = reflect(wytk, triangle[i])
     newTriangle[3] = intersect(wytj, wytk)
+
+    newTriangle[4] = reflect(triangle[4], triangle[i])
+    newTriangle[5] = reflect(triangle[5], triangle[i])
+    newTriangle[6] = reflect(triangle[6], triangle[i])
 
     newTriangle[i][0] = -triangle[i][0]
     newTriangle[i][1] = -triangle[i][1]
@@ -193,14 +229,26 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
   let center
   if (!curvature) {
     center = [...triangle[2]]
-    vertices.push([...triangle[1]])
-    vertices.push([...triangle[0]])
+    vertices.push([...triangle[1]], [...triangle[0]])
+    wythoffs.push([
+      [...triangle[3]],
+      [...triangle[4]],
+      [...triangle[5]],
+      [...triangle[6]],
+    ])
   } else {
     center = intx(triangle[0], triangle[1])
-    vertices.push(intx(triangle[0], triangle[2]))
-    vertices.push(intx(triangle[2], triangle[1]))
+    vertices.push(
+      intx(triangle[0], triangle[2]),
+      intx(triangle[2], triangle[1])
+    )
+    wythoffs.push([
+      [...triangle[3].map(x => (curvature <= 0 || order % 2 ? x : -x))],
+      intx(triangle[4], triangle[0]),
+      intx(triangle[5], triangle[1]),
+      intx(triangle[6], triangle[2]),
+    ])
   }
-  wythoffs.push([...triangle[3]])
 
   const rootEdges = [...triangle]
   rootEdges.parity = 1 - parity
@@ -210,10 +258,25 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
     triangle = reflectOn(triangle, (n + 1) % 2, order, false, tokens)
     if (!curvature) {
       vertices.push([...triangle[(n + 1) % 2]])
+      wythoffs.push([
+        [...triangle[3]],
+        [...triangle[4]],
+        [...triangle[5]],
+        [...triangle[6]],
+      ])
     } else {
       vertices.push(intx(triangle[2], triangle[n % 2]))
+      wythoffs.push([
+        [
+          ...triangle[3].map(x =>
+            curvature <= 0 || n % 2 !== order % 2 ? x : -x
+          ),
+        ],
+        intx(triangle[n % 2 ? 4 : 0], triangle[n % 2 ? 0 : 4]),
+        intx(triangle[n % 2 ? 5 : 1], triangle[n % 2 ? 1 : 5]),
+        intx(triangle[n % 2 ? 6 : 2], triangle[n % 2 ? 2 : 6]),
+      ])
     }
-    wythoffs.push([...triangle[3]])
     const subEdges = [...triangle]
     subEdges.parity = n % 2 === 0 ? parity : 1 - parity
     triangles[order].push(subEdges)
@@ -354,4 +417,30 @@ export const perp = (w, a, b) => {
   } else {
     return intersect(normalize(cross(a, w), 1), a)
   }
+}
+
+export const perps = (w, triangle) => {
+  const perps = [w]
+  for (let i = 0; i < 3; i++) {
+    const a = triangle[i]
+
+    if (curvature === 0) {
+      const b = triangle[(i + 1) % 3]
+      if (a[0] === b[0]) {
+        perps.push([0, w[1], 0])
+        continue
+      }
+      const alpha = (b[1] - a[1]) / (b[0] - a[0])
+      const alpha2 = alpha * alpha
+      const nr = 1 / (1 + alpha2)
+      perps.push([
+        nr * (alpha2 * a[0] + alpha * (w[1] - a[1]) + w[0]),
+        nr * (alpha2 * w[1] + alpha * (w[0] - a[0]) + a[1]),
+        0,
+      ])
+    } else {
+      perps.push(normalize(cross(a, w), 1))
+    }
+  }
+  return perps
 }
