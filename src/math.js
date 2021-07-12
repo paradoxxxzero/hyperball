@@ -452,8 +452,8 @@ const hyperbolicTranslate = (vertex, offset) => {
   const [xe, ye, ze] = vertex
   const [xt, yt] = offset
 
-  const cxt = Math.cosh(Math.asinh(xt))
-  const cyt = Math.cosh(Math.asinh(yt))
+  const cxt = Math.sqrt(1 + xt * xt) // Math.cosh(Math.asinh(xt))
+  const cyt = Math.sqrt(1 + yt * yt) // Math.cosh(Math.asinh(yt))
   const a = xe
   const b = ye * yt + ze * cyt
   vertex[0] = a * cxt - b * xt
@@ -464,8 +464,8 @@ const hyperbolicTranslate = (vertex, offset) => {
 const ellipticTranslate = (vertex, offset) => {
   const [xe, ye, ze] = vertex
   const [xt, yt] = offset
-  const cxt = Math.cos(Math.asin(xt))
-  const cyt = Math.cos(Math.asin(yt))
+  const cxt = Math.sqrt(1 - xt * xt) // Math.cos(Math.asin(xt))
+  const cyt = Math.sqrt(1 - yt * yt) // Math.cos(Math.asin(yt))
   const a = xe
   const b = ye * yt + ze * cyt
   vertex[0] = a * cxt + b * xt
