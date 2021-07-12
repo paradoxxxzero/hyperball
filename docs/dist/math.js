@@ -29,18 +29,172 @@ export const normalize = ([x, y, z], c = curvature) => {
 export const dot = ([xa, ya, za], [xb, yb, zb]) =>
   xa * xb + ya * yb + curvature * za * zb
 
-export const cross = ([xa, ya, za], [xb, yb, zb]) => [
+export const cross = ([xa, ya, za], [xb, yb, zb], c = curvature) => [
   ya * zb - za * yb,
   za * xb - xa * zb,
-  curvature * (xa * yb - ya * xb),
+  c * (xa * yb - ya * xb),
 ]
+
+export const intersect = (a, b) => normalize(cross(a, b))
+
+export const bisect = (a, b) => {
+  // const ab = [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+  // return normalize(cross(ab, cross(a, b)), 1)
+  if (curvature < 0) {
+    const ab = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    return normalize(ab, 1)
+  }
+  const halfab = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]), 0.5 * (a[2] + b[2])]
+  return intersect(cross(a, b), halfab)
+}
+
+export const vec = ([xa, ya, za], [xb, yb, zb]) => [xb - xa, yb - ya, zb - za]
+
+export const inTriangle = (P, A, B, C) => {
+  if (!curvature) {
+    const AP = vec(A, P)
+    const BP = vec(B, P)
+    const CP = vec(C, P)
+    const AB = vec(A, B)
+    const BC = vec(B, C)
+    const CA = vec(C, A)
+
+    const ABAP = cross(AB, AP, 1)[2]
+    const BCBP = cross(BC, BP, 1)[2]
+    const CACP = cross(CA, CP, 1)[2]
+    return (
+      Math.sign(ABAP) === Math.sign(BCBP) && Math.sign(BCBP) === Math.sign(CACP)
+    )
+  }
+  return dot(A, P) <= 0 && dot(B, P) <= 0 && curvature * dot(C, P) >= 0
+}
+const flip = ([x, y, z]) => (curvature > 0 ? [-x, -y, -z] : [x, y, z])
+
+export const incenter = (A, B, C) => {
+  if (!curvature) {
+    const a = Math.sqrt(dot(vec(B, C), vec(B, C)))
+    const b = Math.sqrt(dot(vec(A, C), vec(A, C)))
+    const c = Math.sqrt(dot(vec(A, B), vec(A, B)))
+    const [xa, ya, za] = A
+    const [xb, yb, zb] = B
+    const [xc, yc, zc] = C
+    const nr = 1 / (a + b + c)
+    return [
+      nr * (a * xa + b * xb + c * xc),
+      nr * (a * ya + b * yb + c * yc),
+      nr * (a * za + b * zb + c * zc),
+    ]
+  }
+  return intersect(bisect(A, B), bisect(B, flip(C)))
+}
+
+export const bisectorOpposites = (A, B, C) => {
+  if (!curvature) {
+    const AB = vec(A, B)
+    const BC = vec(B, C)
+    const CA = vec(C, A)
+    const a = Math.sqrt(dot(BC, BC))
+    const b = Math.sqrt(dot(CA, CA))
+    const c = Math.sqrt(dot(AB, AB))
+    const [xa, ya, za] = A
+    const [xb, yb, zb] = B
+    const [xc, yc, zc] = C
+    const nra = 1 / (b + c)
+    const nrb = 1 / (a + c)
+    const nrc = 1 / (a + b)
+
+    return [
+      [
+        nra * b * xb + nra * c * xc,
+        nra * b * yb + nra * c * yc,
+        nra * b * zb + nra * c * zc,
+      ],
+      [
+        nrb * a * xa + nrb * c * xc,
+        nrb * a * ya + nrb * c * yc,
+        nrb * a * za + nrb * c * zc,
+      ],
+      [
+        nrc * a * xa + nrc * b * xb,
+        nrc * a * ya + nrc * b * yb,
+        nrc * a * za + nrc * b * zb,
+      ],
+    ]
+  }
+  return [
+    intersect(C, bisect(A, B)),
+    intersect(A, bisect(flip(B), C)),
+    intersect(B, bisect(C, flip(A))),
+  ]
+}
+
+export const intersectPlane = (A, B, C, D) => {
+  const a = (B[1] - A[1]) / (B[0] - A[0])
+  const b = B[1] - a * B[0]
+  const c = (D[1] - C[1]) / (D[0] - C[0])
+  const d = D[1] - c * D[0]
+  if (B[0] === A[0]) {
+    return [A[0], d, 0]
+  }
+  if (D[0] === C[0]) {
+    return [C[0], b, 0]
+  }
+  const x = (d - b) / (a - c)
+  return [x, a * x + b, 0]
+}
+
+export const intersectTriangleByincenter = (P, A, B, C) => {
+  if (!curvature) {
+    const I = incenter(A, B, C)
+    const IP = vec(I, P)
+    const AB = vec(A, B)
+    const BC = vec(B, C)
+    const CA = vec(C, A)
+
+    let X = intersectPlane(A, B, I, P)
+    const AX = vec(A, X)
+    let IX = vec(I, X)
+    let d = dot(AB, AX)
+    if (d >= 0 && d <= dot(AB, AB) && dot(IP, IX) > 0) {
+      return X
+    }
+    X = intersectPlane(B, C, I, P)
+    const BX = vec(B, X)
+    IX = vec(I, X)
+    d = dot(BC, BX)
+    if (d >= 0 && d <= dot(BC, BC) && dot(IP, IX) > 0) {
+      return X
+    }
+    X = intersectPlane(C, A, I, P)
+    const CX = vec(C, X)
+    IX = vec(I, X)
+    d = dot(CA, CX)
+    if (d >= 0 && d <= dot(CA, CA) && dot(IP, IX) > 0) {
+      return X
+    }
+  }
+  const I = incenter(A, B, C)
+  const IP = normalize(cross(I, P), 1)
+  const dAP = dot(A, P) >= 0
+  const dBP = dot(B, P) >= 0
+  const dCP = curvature * dot(C, P) <= 0
+  const dbAP = curvature * dot(bisect(B, flip(C)), P) <= 0
+  const dbBP = curvature * dot(bisect(flip(C), A), P) <= 0
+  const dbCP = dot(bisect(A, flip(B)), P) >= 0
+
+  if (dCP && ((!dAP && !dBP) || (dBP && !dbAP) || (dAP && dbBP))) {
+    return intersect(flip(C), IP)
+  }
+  if (dBP && ((!dAP && !dCP) || (dCP && dbAP) || (dAP && !dbCP))) {
+    return intersect(B, IP)
+  }
+  return intersect(A, IP)
+}
 
 export const reflect = (a, b) => {
   const ab2 = (2 * dot(a, b)) / dot(b, b)
   return [a[0] - ab2 * b[0], a[1] - ab2 * b[1], a[2] - ab2 * b[2]]
 }
-
-export const intersect = (a, b) => normalize(cross(a, b))
 
 export const getToken = triangle => {
   let str = []
@@ -187,13 +341,14 @@ export const getRootTriangle = ({ p, q, r }) => {
   }
 
   const a =
-    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
-  const b = Math.cos(qAngle)
+    (curvature * (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle))) /
+    Math.sin(pAngle)
+  const b = curvature * Math.cos(qAngle)
   const c = Math.sqrt(curvature * (1 - a * a - b * b))
   return [
     [1, 0, 0],
     [-Math.cos(pAngle), Math.sin(pAngle), 0],
-    [-b, -a, c],
+    [b, a, c],
   ]
 }
 
