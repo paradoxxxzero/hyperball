@@ -31,6 +31,12 @@ import {
   intersect,
   curve,
   perps,
+  vec,
+  incenter,
+  dot,
+  bisectorOpposites,
+  inTriangle,
+  intersectTriangleByincenter,
 } from './math'
 
 let index = []
@@ -509,7 +515,7 @@ const nextLayer = () => {
     lastTriangles.map(triangle => asynced(() => createPolygon(triangle, order)))
   )
 }
-const getWythoffTriangle = ({ p, q, r }) => {
+const getWythoffTriangle = ({ p, q, r }, wythoff) => {
   const root = getRootTriangle({ p, q, r })
 
   root.push(...perps(wythoff, root))
@@ -555,7 +561,7 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      const root = getWythoffTriangle(settings)
+      const root = getWythoffTriangle(settings, wythoff)
       root.parity = 0
       createPolygon(root, 0)
     } else {
@@ -676,7 +682,7 @@ const renderRootTriangle = () => {
   const rootProject = p => poincare(p).map(c => (curvature > 0 ? -c : c))
 
   const curvature = getCurvature()
-  const edges = getWythoffTriangle(settings)
+  const edges = getWythoffTriangle(settings, wythoff)
 
   const triangle = curvature
     ? [
@@ -1017,7 +1023,7 @@ gui.revert = () => {
   regenerate()
 }
 
-interact('canvas')
+interact('#c2d,#c3d')
   .draggable({
     listeners: {
       move: e => {
@@ -1107,7 +1113,54 @@ const wyth = e => {
   if (curvature > 0) {
     u = u.map(c => -c)
   }
-  wythoff = fromPoincare(u)
+  let newWythoff = fromPoincare(u)
+
+  const edges = getWythoffTriangle(settings, newWythoff)
+
+  const triangle = curvature
+    ? [
+        intersect(edges[0], edges[1]),
+        intersect(edges[0], edges[2]),
+        intersect(edges[2], edges[1]),
+        edges[3],
+        intersect(edges[4], edges[0]),
+        intersect(edges[5], edges[1]),
+        intersect(edges[6], edges[2]),
+      ]
+    : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
+
+  const interestingPoints = [
+    // Snap to center
+    incenter(...triangle),
+    // Snap to points
+    ...triangle.slice(0, 3),
+    // Snap to bisectors
+    ...bisectorOpposites(...triangle),
+  ]
+
+  if (!inTriangle(newWythoff, ...triangle)) {
+    newWythoff = intersectTriangleByincenter(newWythoff, ...triangle)
+  }
+
+  let nearest,
+    nearestSqDist = Infinity
+  for (let i = 0; i < interestingPoints.length; i++) {
+    const point = interestingPoints[i]
+    const v = vec(newWythoff, point)
+    const sqDist = dot(v, v)
+    if (sqDist < nearestSqDist) {
+      nearestSqDist = sqDist
+      nearest = point
+    }
+  }
+
+  const minSqDist = 0.01
+  if (!e.shiftKey && nearestSqDist < minSqDist) {
+    wythoff = nearest
+  } else {
+    wythoff = newWythoff
+  }
+
   regenerate()
   e.stopPropagation()
 }
