@@ -92,6 +92,9 @@ const STROKE_COLOR_TYPES = ['plain', 'colored']
 const init2d = () => {
   canvas = document.createElement('canvas')
   ctx = canvas.getContext('2d')
+  ctx.lineJoin = 'mitter'
+  ctx.lineCap = 'butt'
+  ctx.mitterLimit = 1
   rootCanvas = document.createElement('canvas')
   rootCtx = rootCanvas.getContext('2d')
 }
@@ -229,83 +232,98 @@ const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
 const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
 const project = p => projections[settings.projection](p)
-
+const black = new Color('black')
 const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (vertices.length < 2) {
     return
   }
-  if (backend === '3d') {
-    let wedgesFillColor, wedgesStrokeColor
-    const fillColor = new Color()
+  const curvature = getCurvature()
+  let fillColor = null,
+    wedgesFillColor = null,
+    strokeColor = null,
+    wythoffColor = null
+
+  if (settings.fillAlpha) {
+    fillColor = [
+      new Color(settings.fillColorR),
+      new Color(settings.fillColorP),
+      new Color(settings.fillColorQ),
+    ]
     if (settings.fill === 'colored') {
-      fillColor.setHSL(
-        ((order * settings.fillColorShift) % 360) / 360,
-        0.5,
-        0.6
-      )
+      fillColor[0].offsetHSL(order * settings.fillColorShift, 0, 0)
+      fillColor[1].offsetHSL(order * settings.fillColorShift, 0, 0)
+      fillColor[2].offsetHSL(order * settings.fillColorShift, 0, 0)
     } else if (settings.fill === 'odd') {
-      fillColor.set(
-        order % 2 === 0 ? settings.fillColor : settings.fillColorEven
-      )
-    } else if (settings.fill === 'plain') {
-      fillColor.set(settings.fillColor)
+      if (order % 2) {
+        fillColor[0].offsetHSL(1 / 2, 0, 0)
+        fillColor[1].offsetHSL(1 / 2, 0, 0)
+        fillColor[2].offsetHSL(1 / 2, 0, 0)
+      }
     }
-    const strokeColor = new Color()
+    if (settings.wedgeShade) {
+      wedgesFillColor = [
+        new Color().lerpColors(fillColor[0], black, settings.wedgeShade / 100),
+        new Color().lerpColors(fillColor[1], black, settings.wedgeShade / 100),
+        new Color().lerpColors(fillColor[2], black, settings.wedgeShade / 100),
+      ]
+    } else {
+      wedgesFillColor = fillColor
+    }
+  }
+
+  if (settings.strokeAlpha) {
+    strokeColor = new Color(settings.strokeColor)
     if (settings.stroke === 'colored') {
-      strokeColor.setHSL(
-        ((order * settings.strokeColorShift) % 360) / 360,
-        0.5,
-        0.6
-      )
-    } else if (settings.stroke === 'plain') {
-      strokeColor.set(settings.strokeColor)
+      strokeColor.offsetHSL(order * settings.strokeColorShift, 0, 0)
     }
+  }
 
-    if (settings.wedges) {
-      wedgesFillColor = new Color()
-      wedgesFillColor.lerpColors(
-        fillColor,
-        new Color(settings.wedgesFillColor),
-        settings.wedgesFillAlpha / 100
-      )
-      wedgesStrokeColor = new Color()
-      wedgesStrokeColor.lerpColors(
-        fillColor,
-        new Color(settings.wedgesStrokeColor),
-        settings.wedgesStrokeAlpha / 100
-      )
+  if (settings.strokeWythoffAlpha) {
+    wythoffColor = new Color(settings.strokeWythoffColor)
+    if (settings.strokeWythoff === 'colored') {
+      wythoffColor.offsetHSL(order * settings.strokeWythoffColorShift, 0, 0)
     }
+  }
 
+  if (backend === '3d') {
     const firstPos = pos + 1
     if (wireframe.visible) {
       lineIndex.push(firstPos)
     }
+
     for (let i = 0; i < settings.p * 2; i++) {
-      render3dVertices(
-        center,
-        vertices[i % vertices.length],
-        vertices[(i + 1) % vertices.length],
-        settings.wedges && parity === i % 2 ? wedgesFillColor : fillColor,
-        strokeColor,
-        wedgesStrokeColor
-      )
+      const wythoff = wythoffs[i]
+
+      for (let j = 0; j < 3; j++) {
+        const vert =
+          i % 2
+            ? [center, vertices[i + 1], vertices[i]]
+            : [center, vertices[i], vertices[1 + i]]
+        const p = ((curvature ? 3 : 4) - j) % 3
+        render3dVertices(
+          wythoff[0],
+          wythoff[1 + j],
+          vert[p],
+          (parity === i % 2 ? wedgesFillColor : fillColor)[p],
+          strokeColor,
+          wythoffColor
+        )
+        render3dVertices(
+          wythoff[0],
+          vert[p],
+          wythoff[1 + ((j + 1) % 3)],
+          (parity === i % 2 ? wedgesFillColor : fillColor)[p],
+          strokeColor,
+          wythoffColor
+        )
+      }
     }
     if (wireframe.visible) {
       lineIndex.push(firstPos)
     }
     return
   }
-  if (settings.fill === 'colored') {
-    ctx.fillStyle = `hsl(${order * settings.fillColorShift}deg, 50%, 60%)`
-  } else if (settings.fill === 'odd') {
-    ctx.fillStyle =
-      order % 2 === 0 ? settings.fillColor : settings.fillColorEven
-  }
-  if (settings.stroke === 'colored') {
-    ctx.strokeStyle = `hsl(${order * settings.strokeColorShift}deg, 50%, 60%)`
-  }
 
-  const curvature = getCurvature()
   // let polyVertices = []
   // if (settings.r === 2 && curvature < 0) {
   //   // Optimization
@@ -336,27 +354,65 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   for (let i = 0; i < settings.p * 2; i++) {
     const wythoff = wythoffs[i]
 
-    for (let j = 0; j < 3; j++) {
-      const vert =
-        i % 2
-          ? [center, vertices[i + 1], vertices[i]]
-          : [center, vertices[i], vertices[1 + i]]
-      const p = ((curvature ? 3 : 4) - j) % 3
-      ctx.fillStyle = `hsl(${
-        order * settings.fillColorShift + ((p + 2) % 3) * 120
-      }deg, 50%, ${i % 2 ? 60 : 40}%)`
+    if (fillColor) {
+      for (let j = 0; j < 3; j++) {
+        const vert =
+          i % 2
+            ? [center, vertices[i + 1], vertices[i]]
+            : [center, vertices[i], vertices[1 + i]]
+        const p = ((curvature ? 3 : 4) - j) % 3
 
-      renderVertices([
-        wythoff[0],
-        wythoff[1 + j],
-        vert[p],
-        wythoff[1 + ((j + 1) % 3)],
-        wythoff[0],
-      ])
+        renderVertices(
+          [
+            wythoff[0],
+            wythoff[1 + j],
+            vert[p],
+            wythoff[1 + ((j + 1) % 3)],
+            wythoff[0],
+          ],
+          fillColor &&
+            (parity === i % 2 ? wedgesFillColor : fillColor)[p].getStyle()
+        )
+      }
+    }
+    if (wythoffColor) {
+      for (let j = 0; j < 3; j++) {
+        renderVertices(
+          [wythoff[0], wythoff[1 + j]],
+          null,
+          wythoffColor && wythoffColor.getStyle(),
+          settings.strokeWythoffAlpha,
+          settings.strokeWythoffWidth
+        )
+      }
+    }
+    if (strokeColor) {
+      for (let j = 1; j < 3; j++) {
+        const vert =
+          i % 2
+            ? [center, vertices[i + 1], vertices[i]]
+            : [center, vertices[i], vertices[1 + i]]
+        const p = ((curvature ? 3 : 4) - j) % 3
+        renderVertices(
+          j === 2
+            ? [wythoff[1 + j], vert[p]]
+            : [vert[p], wythoff[1 + ((j + 1) % 3)]],
+          null,
+          strokeColor && strokeColor.getStyle(),
+          settings.strokeAlpha,
+          settings.strokeWidth
+        )
+      }
     }
   }
 }
-const renderVertices = (vertices, isWedge) => {
+const renderVertices = (
+  vertices,
+  fillColor,
+  strokeColor,
+  strokeAlpha,
+  strokeWidth
+) => {
   ctx.beginPath()
 
   const straight = settings.projection === 'klein' || settings.straight
@@ -386,28 +442,19 @@ const renderVertices = (vertices, isWedge) => {
       }
     }
     ctx.lineTo(pv[0], pv[1])
+
+    if (i === 1 && strokeColor) {
+      ctx.lineWidth = strokeWidth
+      ctx.globalAlpha = strokeAlpha / 100
+      ctx.strokeStyle = strokeColor
+      ctx.stroke()
+    }
   }
-  if (isWedge) {
-    if (settings.wedgesFillAlpha) {
-      ctx.globalAlpha = settings.wedgesFillAlpha / 100
-      ctx.fillStyle = settings.wedgesFillColor
-      ctx.fill()
-    }
-    if (settings.wedgesStrokeAlpha) {
-      ctx.lineWidth = settings.wedgesStrokeWidth
-      ctx.strokeStyle = settings.wedgesStrokeColor
-      ctx.globalAlpha = settings.wedgesStrokeAlpha / 100
-      ctx.stroke()
-    }
-  } else {
-    if (settings.fillAlpha) {
-      ctx.globalAlpha = settings.fillAlpha / 100
-      ctx.fill()
-    }
-    if (settings.strokeAlpha) {
-      ctx.globalAlpha = settings.strokeAlpha / 100
-      ctx.stroke()
-    }
+
+  if (fillColor) {
+    ctx.globalAlpha = settings.fillAlpha / 100
+    ctx.fillStyle = fillColor
+    ctx.fill()
   }
 }
 
@@ -667,10 +714,10 @@ const clear = () => {
     wireframe.material.linewidth = settings.strokeWidth
     wireframe.visible = settings.strokeAlpha
 
-    wedgesframe.material.transparent = settings.wedgesStrokeAlpha !== 100
-    wedgesframe.material.opacity = settings.wedgesStrokeAlpha / 100
-    wedgesframe.material.linewidth = settings.wedgesStrokeWidth
-    wedgesframe.visible = settings.wedges && settings.wedgesStrokeAlpha
+    wedgesframe.material.transparent = settings.strokeWythoffAlpha !== 100
+    wedgesframe.material.opacity = settings.strokeWythoffAlpha / 100
+    wedgesframe.material.linewidth = settings.strokeWythoffWidth
+    wedgesframe.visible = settings.wedges && settings.strokeWythoffAlpha
 
     faces.geometry.setDrawRange(0, 0)
     wireframe.geometry.setDrawRange(0, 0)
@@ -679,6 +726,25 @@ const clear = () => {
 }
 
 const renderRootTriangle = () => {
+  let fillColor = null,
+    strokeColor = null,
+    wythoffColor = null
+  if (settings.fillAlpha) {
+    fillColor = [
+      new Color(settings.fillColorR),
+      new Color(settings.fillColorP),
+      new Color(settings.fillColorQ),
+    ]
+  }
+
+  if (settings.strokeAlpha) {
+    strokeColor = new Color(settings.strokeColor)
+  }
+
+  if (settings.strokeWythoffAlpha) {
+    wythoffColor = new Color(settings.strokeWythoffColor)
+  }
+
   const precision = 0.01
   const rootProject = p => poincare(p).map(c => (curvature !== 0 ? -c : c))
 
@@ -706,7 +772,6 @@ const renderRootTriangle = () => {
   const root = ([x, y]) => [x * rootRatio, rootSize - y * rootRatio]
 
   rootCanvas.width = xmax * rootRatio + 5
-  rootCtx.lineWidth = 2
 
   const draw = c => {
     for (let i = 0; i < c.length; i++) {
@@ -722,19 +787,38 @@ const renderRootTriangle = () => {
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
     const p = ((curvature ? 3 : 4) - i) % 3
-    rootCtx.fillStyle = `hsl(${((p + 2) % 3) * 120}deg, 50%, 60%)`
+    rootCtx.fillStyle = fillColor && fillColor[p].getStyle()
     rootCtx.beginPath()
 
-    curveChain(
-      wythoff,
-      triangle[4 + i],
-      triangle[p],
-      triangle[4 + ((i + 1) % 3)],
-      wythoff
-    )
+    if (fillColor) {
+      curveChain(
+        wythoff,
+        triangle[4 + i],
+        triangle[p],
+        triangle[4 + ((i + 1) % 3)],
+        wythoff
+      )
 
-    rootCtx.fill()
-    rootCtx.stroke()
+      rootCtx.globalAlpha = settings.fillAlpha / 100
+      rootCtx.fill()
+    }
+
+    if (wythoffColor) {
+      rootCtx.beginPath()
+      curveChain(wythoff, triangle[4 + i])
+      rootCtx.lineWidth = settings.strokeWythoffWidth
+      rootCtx.globalAlpha = settings.strokeWythoffAlpha / 100
+      rootCtx.strokeStyle = wythoffColor.getStyle()
+      rootCtx.stroke()
+    }
+    if (strokeColor) {
+      rootCtx.beginPath()
+      curveChain(triangle[4 + i], triangle[p], triangle[4 + ((i + 1) % 3)])
+      rootCtx.lineWidth = settings.strokeWidth
+      rootCtx.globalAlpha = settings.strokeAlpha / 100
+      rootCtx.strokeStyle = strokeColor.getStyle()
+      rootCtx.stroke()
+    }
   }
 
   // for (let i = 0; i < interestingPoints.length; i++) {
@@ -912,6 +996,11 @@ const debounce = (func, wait, immediate) => {
 
 const continueGenerate = () => regenerate(true)
 
+const styleChange = () => {
+  renderRootTriangle()
+  render()
+}
+
 gui
   .add(settings, 'projection', Object.keys(projections).concat(views))
   .onChange(v => {
@@ -964,32 +1053,39 @@ gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 
 const fillGui = gui.addFolder('Fill Style')
-fillGui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(render)
-fillGui.addColor(settings, 'fillColor').onChange(render)
-fillGui.addColor(settings, 'fillColorEven').onChange(render)
+fillGui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(styleChange)
+fillGui.addColor(settings, 'fillColorP').onChange(styleChange)
+fillGui.addColor(settings, 'fillColorQ').onChange(styleChange)
+fillGui.addColor(settings, 'fillColorR').onChange(styleChange)
 fillGui
   .add(settings, 'fillColorShift', -359, 359, 1)
   .onChange(() => regenerate())
-fillGui.add(settings, 'fillAlpha', 0, 100, 1).onChange(render)
+fillGui.add(settings, 'fillAlpha', 0, 100, 1).onChange(styleChange)
+fillGui.add(settings, 'wedgeShade', 0, 100, 1).onChange(styleChange)
 
 const strokeGui = gui.addFolder('Stroke Style')
-strokeGui.add(settings, 'stroke', STROKE_COLOR_TYPES).onChange(render)
-strokeGui.addColor(settings, 'strokeColor').onChange(render)
+strokeGui.add(settings, 'stroke', STROKE_COLOR_TYPES).onChange(styleChange)
+strokeGui.addColor(settings, 'strokeColor').onChange(styleChange)
 strokeGui
   .add(settings, 'strokeColorShift', -359, 359, 1)
   .onChange(() => regenerate())
-strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(render)
-strokeGui.add(settings, 'strokeWidth', 0.1, 10, 0.1).onChange(render)
-strokeGui.addColor(settings, 'backgroundColor').onChange(render)
-strokeGui.add(settings, 'straight').onChange(render)
+strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(styleChange)
+strokeGui.add(settings, 'strokeWidth', 0.1, 10, 0.1).onChange(styleChange)
+strokeGui.addColor(settings, 'backgroundColor').onChange(styleChange)
+strokeGui
+  .add(settings, 'strokeWythoff', STROKE_COLOR_TYPES)
+  .onChange(styleChange)
+strokeGui.addColor(settings, 'strokeWythoffColor').onChange(styleChange)
+strokeGui
+  .add(settings, 'strokeWythoffColorShift', -359, 359, 1)
+  .onChange(() => regenerate())
+strokeGui.add(settings, 'strokeWythoffAlpha', 0, 100, 1).onChange(styleChange)
+strokeGui
+  .add(settings, 'strokeWythoffWidth', 0.1, 10, 0.1)
+  .onChange(styleChange)
 
-const wedgesGui = gui.addFolder('Wedges Style')
-wedgesGui.add(settings, 'wedges').onChange(render)
-wedgesGui.addColor(settings, 'wedgesFillColor').onChange(render)
-wedgesGui.add(settings, 'wedgesFillAlpha', 0, 100, 1).onChange(render)
-wedgesGui.addColor(settings, 'wedgesStrokeColor').onChange(render)
-wedgesGui.add(settings, 'wedgesStrokeAlpha', 0, 100, 1).onChange(render)
-wedgesGui.add(settings, 'wedgesStrokeWidth', 0.1, 10, 0.1).onChange(render)
+gui.addColor(settings, 'backgroundColor').onChange(render)
+gui.add(settings, 'straight').onChange(render)
 
 gui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(v => {
   setTokenPrecision(v)
@@ -1087,12 +1183,6 @@ canvas.id = 'c2d'
 rootCanvas.id = 'rc2d'
 rootCanvas.width = rootSize
 rootCanvas.height = rootSize
-rootCanvas.style.position = 'fixed'
-rootCanvas.style.bottom = 0
-rootCanvas.style.left = 0
-rootCanvas.style.cursor = 'pointer'
-rootCanvas.style.marginLeft = '15px'
-rootCanvas.style.marginBottom = '15px'
 
 document.body.appendChild(renderer.domElement)
 document.body.appendChild(canvas)
