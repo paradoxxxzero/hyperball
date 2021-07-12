@@ -70,9 +70,10 @@ let radius,
   faces,
   wireframe,
   wedgesframe,
-  rootSize = 150,
+  rootSize = 200,
   rootRatio,
-  wythoff
+  wythoff,
+  interestingPoints = []
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -679,7 +680,7 @@ const clear = () => {
 
 const renderRootTriangle = () => {
   const precision = 0.01
-  const rootProject = p => poincare(p).map(c => (curvature > 0 ? -c : c))
+  const rootProject = p => poincare(p).map(c => (curvature !== 0 ? -c : c))
 
   const curvature = getCurvature()
   const edges = getWythoffTriangle(settings, wythoff)
@@ -735,6 +736,12 @@ const renderRootTriangle = () => {
     rootCtx.fill()
     rootCtx.stroke()
   }
+
+  // for (let i = 0; i < interestingPoints.length; i++) {
+  //   rootCtx.fillStyle = 'pink'
+  //   const p = root(rootProject(interestingPoints[i]))
+  //   rootCtx.fillRect(p[0] - 3, p[1] - 3, 6, 6)
+  // }
 }
 
 const render = () => {
@@ -1097,12 +1104,11 @@ const fromPoincare = ([x, y]) => {
   if (!curvature) {
     return [x, y, 0]
   } else {
-    const s = -curvature * (x * x + y * y)
+    const s = -curvature * Math.min(0.999, x * x + y * y)
     const nr = 1 / (1 - s)
     return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
   }
 }
-
 const wyth = e => {
   const curvature = getCurvature()
   const { left, top } = e.target.getBoundingClientRect()
@@ -1110,7 +1116,7 @@ const wyth = e => {
   const y = e.clientY - top
   const nr = 1 / rootRatio
   let u = [x * nr, (rootSize - y) * nr]
-  if (curvature > 0) {
+  if (curvature !== 0) {
     u = u.map(c => -c)
   }
   let newWythoff = fromPoincare(u)
@@ -1129,17 +1135,17 @@ const wyth = e => {
       ]
     : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
 
-  const interestingPoints = [
+  interestingPoints = [
     // Snap to center
-    incenter(...triangle),
+    incenter(...edges),
     // Snap to points
     ...triangle.slice(0, 3),
     // Snap to bisectors
-    ...bisectorOpposites(...triangle),
+    ...bisectorOpposites(...edges),
   ]
 
-  if (!inTriangle(newWythoff, ...triangle)) {
-    newWythoff = intersectTriangleByincenter(newWythoff, ...triangle)
+  if (!inTriangle(newWythoff, ...edges)) {
+    newWythoff = intersectTriangleByincenter(newWythoff, ...edges)
   }
 
   let nearest,
@@ -1154,7 +1160,7 @@ const wyth = e => {
     }
   }
 
-  const minSqDist = 0.01
+  const minSqDist = curvature ? 0.001 : 0.01
   if (!e.shiftKey && nearestSqDist < minSqDist) {
     wythoff = nearest
   } else {

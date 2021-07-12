@@ -193,7 +193,7 @@ export const getRootTriangle = ({ p, q, r }) => {
   return [
     [1, 0, 0],
     [-Math.cos(pAngle), Math.sin(pAngle), 0],
-    [b, a, c],
+    [-b, -a, c],
   ]
 }
 
