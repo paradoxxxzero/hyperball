@@ -418,7 +418,7 @@ export default {
         wp: 0,
         wq: 0,
         wr: 1,
-        layers: 8,
+        layers: 4,
         limit: 1000,
         fill: 'plain',
         fillColorP: '#303030',

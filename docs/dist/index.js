@@ -37,6 +37,7 @@ import {
   bisectorOpposites,
   inTriangle,
   intersectTriangleByincenter,
+  normalize,
 } from './math.js'
 
 let index = []
@@ -1069,9 +1070,9 @@ gui
 gui.add(settings, 'p', 2, 20, 1).onChange(pqrChange)
 gui.add(settings, 'q', 2, 20, 1).onChange(pqrChange)
 gui.add(settings, 'r', 2, 20, 1).onChange(pqrChange)
-gui.add(settings, 'wp', -1, 1, 0.001).listen().onChange(pqrChange)
-gui.add(settings, 'wq', -1, 1, 0.001).listen().onChange(pqrChange)
-gui.add(settings, 'wr', -1, 1, 0.001).listen().onChange(pqrChange)
+gui.add(settings, 'wp', -2, 2, 0.001).listen().onChange(pqrChange)
+gui.add(settings, 'wq', -2, 2, 0.001).listen().onChange(pqrChange)
+gui.add(settings, 'wr', -2, 2, 0.001).listen().onChange(pqrChange)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
 const fillGui = gui.addFolder('Fill Style')
@@ -1224,6 +1225,21 @@ const fromPoincare = ([x, y]) => {
 
 const checkWythoff = (newWythoff, free) => {
   const curvature = getCurvature()
+  if (dot(newWythoff, newWythoff) - curvature > 1e-5) {
+    if (!curvature) {
+      newWythoff[2] = 0
+    } else {
+      if (curvature < 0) {
+        while (
+          newWythoff[0] * newWythoff[0] + newWythoff[1] * newWythoff[1] >
+          newWythoff[2] * newWythoff[2]
+        ) {
+          newWythoff[2] *= 1.1
+        }
+      }
+      newWythoff = normalize(newWythoff)
+    }
+  }
   const edges = getWythoffTriangle(settings, newWythoff)
 
   const triangle = curvature
