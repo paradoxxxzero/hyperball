@@ -575,7 +575,7 @@ export const perp = (w, a, b) => {
 }
 
 export const perps = (w, triangle) => {
-  const perps = [w]
+  let perps = [w]
   for (let i = 0; i < 3; i++) {
     const a = triangle[i]
 
