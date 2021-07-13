@@ -303,7 +303,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
           vert[p],
           wythoff[1 + ((j + 1) % 3)],
           j,
-          (parity === i % 2 ? wedgesFillColor : fillColor)[p],
+          fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[p],
           strokeColor,
           wythoffColor
         )
@@ -464,43 +464,53 @@ const render3dVertices = (
   const lineColors = wireframe.geometry.attributes.color.array
   const lineWedgesColors = wythoffframe.geometry.attributes.color.array
   // TODO: redo curved
-  // const curved = settings.projection !== 'klein' && !settings.straight
-  const vertices = [c, u, v, w, c]
-  // curved
-  //   ? [curve(u, v, Math.max(0.01, (20 - settings.curvePrecision) / 50))]
-  //   : [c, u, v, w, c]
-
+  const curved = settings.projection !== 'klein' && !settings.straight
+  const precision = Math.max(0.01, (20 - settings.curvePrecision) / 50)
+  const vertices = curved
+    ? [
+        [],
+        curve(c, u, precision),
+        curve(u, v, precision),
+        curve(v, w, precision),
+        curve(w, c, precision),
+      ]
+    : [[c], [u], [v], [w], [c]]
+  const curvature = getCurvature()
+  const p = ((curvature ? 3 : 4) - part) % 3
   const centerPos = pos
-
   for (let j = 0, m = vertices.length; j < m; j++) {
-    const vertex = vertices[j]
-    positions[pos * 3] = vertex[0]
-    positions[pos * 3 + 1] = vertex[1]
-    positions[pos * 3 + 2] = vertex[2]
+    const verts = vertices[j]
 
-    if (faces.visible) {
-      j > 1 && index.push(centerPos, pos - 1, pos)
-      colors[pos * 3] = fillColor.r
-      colors[pos * 3 + 1] = fillColor.g
-      colors[pos * 3 + 2] = fillColor.b
-    }
+    for (let k = 0, n = verts.length; k < n; k++) {
+      const vertex = verts[k]
+      positions[pos * 3] = vertex[0]
+      positions[pos * 3 + 1] = vertex[1]
+      positions[pos * 3 + 2] = vertex[2]
 
-    if (wireframe.visible) {
-      lineColors[pos * 3] = strokeColor.r
-      lineColors[pos * 3 + 1] = strokeColor.g
-      lineColors[pos * 3 + 2] = strokeColor.b
-      if ((part > 0 && part === 2 && j === 2) || (part === 1 && j === 1)) {
-        lineIndex.push(pos - 1, pos)
+      if (faces.visible) {
+        pos > centerPos + 1 && index.push(centerPos, pos - 1, pos)
+        colors[pos * 3] = fillColor.r
+        colors[pos * 3 + 1] = fillColor.g
+        colors[pos * 3 + 2] = fillColor.b
       }
-    }
 
-    if (wythoffframe.visible) {
-      lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-      lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-      lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-      j === 1 && lineWedgesIndex.push(pos - 1, pos)
+      if (wireframe.visible) {
+        lineColors[pos * 3] = strokeColor.r
+        lineColors[pos * 3 + 1] = strokeColor.g
+        lineColors[pos * 3 + 2] = strokeColor.b
+        if ((part > 0 && p === 2 && j === 3) || (p === 1 && j === 2)) {
+          lineIndex.push(pos - 1, pos)
+        }
+      }
+
+      if (wythoffframe.visible) {
+        lineWedgesColors[pos * 3] = wedgesStrokeColor.r
+        lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
+        lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
+        j === 1 && lineWedgesIndex.push(pos - 1, pos)
+      }
+      pos++
     }
-    pos++
   }
 }
 
@@ -1097,7 +1107,7 @@ strokeGui
   .onChange(styleChange)
 
 gui.addColor(settings, 'backgroundColor').onChange(render)
-gui.add(settings, 'straight').onChange(render)
+gui.add(settings, 'straight').onChange(() => regenerate())
 
 gui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(v => {
   setTokenPrecision(v)
