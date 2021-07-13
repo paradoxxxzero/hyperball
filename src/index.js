@@ -69,10 +69,9 @@ let radius,
   scene,
   faces,
   wireframe,
-  wedgesframe,
+  wythoffframe,
   rootSize = 200,
   rootRatio,
-  wythoff,
   interestingPoints = []
 
 const getPreset = () =>
@@ -84,7 +83,6 @@ const settings = {
 
 setTokenPrecision(settings.tokenPrecision)
 setCurvature(settings)
-wythoff = [0, 0, Math.abs(getCurvature())]
 
 const FILL_COLOR_TYPES = ['plain', 'odd', 'colored']
 const STROKE_COLOR_TYPES = ['plain', 'colored']
@@ -175,9 +173,9 @@ const init3d = () => {
   const lineWedgesMaterial = new LineBasicMaterial({
     vertexColors: true,
   })
-  wedgesframe = new LineSegments(lineWedgesGeometry, lineWedgesMaterial)
-  wedgesframe.scale.setScalar(0.995)
-  scene.add(wedgesframe)
+  wythoffframe = new LineSegments(lineWedgesGeometry, lineWedgesMaterial)
+  wythoffframe.scale.setScalar(0.995)
+  scene.add(wythoffframe)
   scene.add(wireframe)
   scene.add(faces)
 }
@@ -250,9 +248,9 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
       new Color(settings.fillColorQ),
     ]
     if (settings.fill === 'colored') {
-      fillColor[0].offsetHSL(order * settings.fillColorShift, 0, 0)
-      fillColor[1].offsetHSL(order * settings.fillColorShift, 0, 0)
-      fillColor[2].offsetHSL(order * settings.fillColorShift, 0, 0)
+      fillColor[0].offsetHSL((order * settings.fillColorShift) / 360, 0, 0)
+      fillColor[1].offsetHSL((order * settings.fillColorShift) / 360, 0, 0)
+      fillColor[2].offsetHSL((order * settings.fillColorShift) / 360, 0, 0)
     } else if (settings.fill === 'odd') {
       if (order % 2) {
         fillColor[0].offsetHSL(1 / 2, 0, 0)
@@ -274,23 +272,22 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (settings.strokeAlpha) {
     strokeColor = new Color(settings.strokeColor)
     if (settings.stroke === 'colored') {
-      strokeColor.offsetHSL(order * settings.strokeColorShift, 0, 0)
+      strokeColor.offsetHSL((order * settings.strokeColorShift) / 360, 0, 0)
     }
   }
 
   if (settings.strokeWythoffAlpha) {
     wythoffColor = new Color(settings.strokeWythoffColor)
     if (settings.strokeWythoff === 'colored') {
-      wythoffColor.offsetHSL(order * settings.strokeWythoffColorShift, 0, 0)
+      wythoffColor.offsetHSL(
+        (order * settings.strokeWythoffColorShift) / 360,
+        0,
+        0
+      )
     }
   }
 
   if (backend === '3d') {
-    const firstPos = pos + 1
-    if (wireframe.visible) {
-      lineIndex.push(firstPos)
-    }
-
     for (let i = 0; i < settings.p * 2; i++) {
       const wythoff = wythoffs[i]
 
@@ -304,22 +301,13 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
           wythoff[0],
           wythoff[1 + j],
           vert[p],
-          (parity === i % 2 ? wedgesFillColor : fillColor)[p],
-          strokeColor,
-          wythoffColor
-        )
-        render3dVertices(
-          wythoff[0],
-          vert[p],
           wythoff[1 + ((j + 1) % 3)],
+          j,
           (parity === i % 2 ? wedgesFillColor : fillColor)[p],
           strokeColor,
           wythoffColor
         )
       }
-    }
-    if (wireframe.visible) {
-      lineIndex.push(firstPos)
     }
     return
   }
@@ -387,14 +375,17 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
       }
     }
     if (strokeColor) {
-      for (let j = 1; j < 3; j++) {
+      for (let j = 0; j < 3; j++) {
         const vert =
           i % 2
             ? [center, vertices[i + 1], vertices[i]]
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
+        if (p === 0) {
+          continue
+        }
         renderVertices(
-          j === 2
+          p === 1
             ? [wythoff[1 + j], vert[p]]
             : [vert[p], wythoff[1 + ((j + 1) % 3)]],
           null,
@@ -459,9 +450,11 @@ const renderVertices = (
 }
 
 const render3dVertices = (
-  center,
+  c,
   u,
   v,
+  w,
+  part,
   fillColor,
   strokeColor,
   wedgesStrokeColor
@@ -469,13 +462,13 @@ const render3dVertices = (
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
   const lineColors = wireframe.geometry.attributes.color.array
-  const lineWedgesColors = wedgesframe.geometry.attributes.color.array
-  const curved = settings.projection !== 'klein' && !settings.straight
-  const vertices = curved
-    ? curve(u, v, Math.max(0.01, (20 - settings.curvePrecision) / 50))
-    : [u, v]
-
-  vertices.unshift(center)
+  const lineWedgesColors = wythoffframe.geometry.attributes.color.array
+  // TODO: redo curved
+  // const curved = settings.projection !== 'klein' && !settings.straight
+  const vertices = [c, u, v, w, c]
+  // curved
+  //   ? [curve(u, v, Math.max(0.01, (20 - settings.curvePrecision) / 50))]
+  //   : [c, u, v, w, c]
 
   const centerPos = pos
 
@@ -496,22 +489,18 @@ const render3dVertices = (
       lineColors[pos * 3] = strokeColor.r
       lineColors[pos * 3 + 1] = strokeColor.g
       lineColors[pos * 3 + 2] = strokeColor.b
-      j > 0 && lineIndex.push(pos)
-      j > 0 && lineIndex.push(pos)
+      if ((part > 0 && part === 2 && j === 2) || (part === 1 && j === 1)) {
+        lineIndex.push(pos - 1, pos)
+      }
     }
 
-    if (wedgesframe.visible) {
+    if (wythoffframe.visible) {
       lineWedgesColors[pos * 3] = wedgesStrokeColor.r
       lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
       lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-      j > 0 && lineWedgesIndex.push(pos)
-      lineWedgesIndex.push(pos)
+      j === 1 && lineWedgesIndex.push(pos - 1, pos)
     }
     pos++
-  }
-
-  if (wedgesframe.visible) {
-    lineWedgesIndex.push(centerPos)
   }
 }
 
@@ -563,10 +552,10 @@ const nextLayer = () => {
     lastTriangles.map(triangle => asynced(() => createPolygon(triangle, order)))
   )
 }
-const getWythoffTriangle = ({ p, q, r }, wythoff) => {
+const getWythoffTriangle = ({ p, q, r, wp, wq, wr }) => {
   const root = getRootTriangle({ p, q, r })
 
-  root.push(...perps(wythoff, root))
+  root.push(...perps([wp, wq, wr], root))
   return root
 }
 
@@ -585,10 +574,13 @@ const generate = async cont => {
     polygons.p = settings.p
     polygons.q = settings.q
     polygons.r = settings.r
+    polygons.wp = settings.wp
+    polygons.wq = settings.wq
+    polygons.wr = settings.wr
     if (backend === '3d') {
       faces.geometry.setDrawRange(0, 0)
       wireframe.geometry.setDrawRange(0, 0)
-      wedgesframe.geometry.setDrawRange(0, 0)
+      wythoffframe.geometry.setDrawRange(0, 0)
     }
     clear()
   } else {
@@ -609,7 +601,7 @@ const generate = async cont => {
       break
     }
     if (polygons.length === 0) {
-      const root = getWythoffTriangle(settings, wythoff)
+      const root = getWythoffTriangle(settings)
       root.parity = 0
       createPolygon(root, 0)
     } else {
@@ -628,11 +620,11 @@ const generate = async cont => {
         wireframe.geometry.attributes.position.needsUpdate = true
         wireframe.geometry.attributes.color.needsUpdate = true
       }
-      if (wedgesframe.visible) {
-        wedgesframe.geometry.setIndex(lineWedgesIndex)
-        wedgesframe.geometry.setDrawRange(0, lineWedgesIndex.length)
-        wedgesframe.geometry.attributes.position.needsUpdate = true
-        wedgesframe.geometry.attributes.color.needsUpdate = true
+      if (wythoffframe.visible) {
+        wythoffframe.geometry.setIndex(lineWedgesIndex)
+        wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+        wythoffframe.geometry.attributes.position.needsUpdate = true
+        wythoffframe.geometry.attributes.color.needsUpdate = true
       }
       renderer.render(scene, camera)
     }
@@ -714,14 +706,14 @@ const clear = () => {
     wireframe.material.linewidth = settings.strokeWidth
     wireframe.visible = settings.strokeAlpha
 
-    wedgesframe.material.transparent = settings.strokeWythoffAlpha !== 100
-    wedgesframe.material.opacity = settings.strokeWythoffAlpha / 100
-    wedgesframe.material.linewidth = settings.strokeWythoffWidth
-    wedgesframe.visible = settings.wedges && settings.strokeWythoffAlpha
+    wythoffframe.material.transparent = settings.strokeWythoffAlpha !== 100
+    wythoffframe.material.opacity = settings.strokeWythoffAlpha / 100
+    wythoffframe.material.linewidth = settings.strokeWythoffWidth
+    wythoffframe.visible = settings.strokeWythoffAlpha
 
     faces.geometry.setDrawRange(0, 0)
     wireframe.geometry.setDrawRange(0, 0)
-    wedgesframe.geometry.setDrawRange(0, 0)
+    wythoffframe.geometry.setDrawRange(0, 0)
   }
 }
 
@@ -749,7 +741,7 @@ const renderRootTriangle = () => {
   const rootProject = p => poincare(p).map(c => (curvature !== 0 ? -c : c))
 
   const curvature = getCurvature()
-  const edges = getWythoffTriangle(settings, wythoff)
+  const edges = getWythoffTriangle(settings)
 
   const triangle = curvature
     ? [
@@ -792,11 +784,11 @@ const renderRootTriangle = () => {
 
     if (fillColor) {
       curveChain(
-        wythoff,
+        triangle[3],
         triangle[4 + i],
         triangle[p],
         triangle[4 + ((i + 1) % 3)],
-        wythoff
+        triangle[3]
       )
 
       rootCtx.globalAlpha = settings.fillAlpha / 100
@@ -805,7 +797,7 @@ const renderRootTriangle = () => {
 
     if (wythoffColor) {
       rootCtx.beginPath()
-      curveChain(wythoff, triangle[4 + i])
+      curveChain(triangle[3], triangle[4 + i])
       rootCtx.lineWidth = settings.strokeWythoffWidth
       rootCtx.globalAlpha = settings.strokeWythoffAlpha / 100
       rootCtx.strokeStyle = wythoffColor.getStyle()
@@ -832,6 +824,17 @@ const render = () => {
   if (reverting) {
     return
   }
+  if (
+    settings.wp !== polygons.wp ||
+    settings.wq !== polygons.wq ||
+    settings.wr !== polygons.wr ||
+    settings.p !== polygons.p ||
+    settings.q !== polygons.q ||
+    settings.r !== polygons.r
+  ) {
+    return
+  }
+
   showStats.showStats && stats.begin()
   clear()
 
@@ -868,8 +871,8 @@ const render = () => {
     if (lineIndex.length !== wireframe.geometry.drawRange.count) {
       wireframe.geometry.setIndex(lineIndex)
     }
-    if (lineWedgesIndex.length !== wedgesframe.geometry.drawRange.count) {
-      wedgesframe.geometry.setIndex(lineWedgesIndex)
+    if (lineWedgesIndex.length !== wythoffframe.geometry.drawRange.count) {
+      wythoffframe.geometry.setIndex(lineWedgesIndex)
     }
     if (faces.visible) {
       faces.geometry.setDrawRange(0, index.length)
@@ -881,10 +884,10 @@ const render = () => {
       wireframe.geometry.attributes.position.needsUpdate = true
       wireframe.geometry.attributes.color.needsUpdate = true
     }
-    if (wedgesframe.visible) {
-      wedgesframe.geometry.setDrawRange(0, lineWedgesIndex.length)
-      wedgesframe.geometry.attributes.position.needsUpdate = true
-      wedgesframe.geometry.attributes.color.needsUpdate = true
+    if (wythoffframe.visible) {
+      wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+      wythoffframe.geometry.attributes.position.needsUpdate = true
+      wythoffframe.geometry.attributes.color.needsUpdate = true
     }
 
     renderer.render(scene, camera)
@@ -960,12 +963,18 @@ gui.remember(settings)
 
 const pqrChange = () => {
   setCurvature(settings)
-  wythoff = [0, 0, Math.abs(getCurvature())]
 
   if (reverting) {
     return
   }
-
+  if (
+    settings.wp !== polygons.wp ||
+    settings.wq !== polygons.wq ||
+    settings.wr !== polygons.wr
+  ) {
+    checkWythoff([settings.wp, settings.wq, settings.wr], true)
+    regenerate()
+  }
   if (
     settings.p !== polygons.p ||
     settings.q !== polygons.q ||
@@ -1000,58 +1009,61 @@ const styleChange = () => {
   renderRootTriangle()
   render()
 }
+const updateProjection = () => {
+  let regen = false
+  if (backend !== '3d' && views.includes(settings.projection)) {
+    backend = '3d'
+    canvas.style.display = 'none'
+    renderer.domElement.style.display = 'block'
+    regen = true
+  } else if (backend !== '2d' && !views.includes(settings.projection)) {
+    backend = '2d'
+    canvas.style.display = 'block'
+    renderer.domElement.style.display = 'none'
+  }
+  if (settings.projection === '3d poincare') {
+    camera.fov = 90
+    camera.position.set(0, 0, -1)
+    controls.target.set(0, 0, 1)
+    camera.updateProjectionMatrix()
+    controls.update()
+  } else if (settings.projection === '3d klein') {
+    camera.fov = 90
+    camera.position.set(0, 0, 0)
+    controls.target.set(0, 0, 1)
+    camera.updateProjectionMatrix()
+    controls.update()
+  } else if (settings.projection === '3d inverted') {
+    camera.fov = 130
+    camera.position.set(0, 0, 2)
+    controls.target.set(0, 0, 4)
+    camera.updateProjectionMatrix()
+    controls.update()
+  } else if (settings.projection === '3d inside') {
+    camera.fov = 90
+    camera.position.set(0, 0, 0.1)
+    controls.target.set(0, 0, 0)
+    camera.updateProjectionMatrix()
+    controls.update()
+  }
+  updateRadius()
+  if (!reverting) {
+    regen && regenerate()
+  }
+  size()
+}
 
 gui
   .add(settings, 'projection', Object.keys(projections).concat(views))
-  .onChange(v => {
-    let regen = false
-    if (backend !== '3d' && views.includes(v)) {
-      backend = '3d'
-      canvas.style.display = 'none'
-      renderer.domElement.style.display = 'block'
-      regen = true
-    } else if (backend !== '2d' && !views.includes(v)) {
-      backend = '2d'
-      canvas.style.display = 'block'
-      renderer.domElement.style.display = 'none'
-    }
-    if (v === '3d poincare') {
-      camera.fov = 90
-      camera.position.set(0, 0, -1)
-      controls.target.set(0, 0, 1)
-      camera.updateProjectionMatrix()
-      controls.update()
-    } else if (v === '3d klein') {
-      camera.fov = 90
-      camera.position.set(0, 0, 0)
-      controls.target.set(0, 0, 1)
-      camera.updateProjectionMatrix()
-      controls.update()
-    } else if (v === '3d inverted') {
-      camera.fov = 130
-      camera.position.set(0, 0, 2)
-      controls.target.set(0, 0, 4)
-      camera.updateProjectionMatrix()
-      controls.update()
-    } else if (v === '3d inside') {
-      camera.fov = 90
-      camera.position.set(0, 0, 0.1)
-      controls.target.set(0, 0, 0)
-      camera.updateProjectionMatrix()
-      controls.update()
-    }
-    updateRadius()
-    if (!reverting) {
-      regen && regenerate()
-    }
-    size()
-  })
+  .onChange(updateProjection)
 gui.add(settings, 'p', 2, 20, 1).onChange(pqrChange)
 gui.add(settings, 'q', 2, 20, 1).onChange(pqrChange)
 gui.add(settings, 'r', 2, 20, 1).onChange(pqrChange)
+gui.add(settings, 'wp', -1, 1, 0.001).listen().onChange(pqrChange)
+gui.add(settings, 'wq', -1, 1, 0.001).listen().onChange(pqrChange)
+gui.add(settings, 'wr', -1, 1, 0.001).listen().onChange(pqrChange)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
-
 const fillGui = gui.addFolder('Fill Style')
 fillGui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(styleChange)
 fillGui.addColor(settings, 'fillColorP').onChange(styleChange)
@@ -1097,7 +1109,7 @@ gui.add(
     recenter: () => {
       stop = true
       transformations.length = 0
-      controls.reset()
+      updateProjection()
       regenerate()
     },
   },
@@ -1172,7 +1184,7 @@ window.hyperball = {
   render,
   faces,
   wireframe,
-  wedgesframe,
+  wythoffframe,
   scene,
   camera,
   controls,
@@ -1199,18 +1211,9 @@ const fromPoincare = ([x, y]) => {
     return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
   }
 }
-const wyth = e => {
-  const curvature = getCurvature()
-  const { left, top } = e.target.getBoundingClientRect()
-  const x = e.clientX - left
-  const y = e.clientY - top
-  const nr = 1 / rootRatio
-  let u = [x * nr, (rootSize - y) * nr]
-  if (curvature !== 0) {
-    u = u.map(c => -c)
-  }
-  let newWythoff = fromPoincare(u)
 
+const checkWythoff = (newWythoff, free) => {
+  const curvature = getCurvature()
   const edges = getWythoffTriangle(settings, newWythoff)
 
   const triangle = curvature
@@ -1251,11 +1254,28 @@ const wyth = e => {
   }
 
   const minSqDist = curvature ? 0.001 : 0.01
-  if (!e.shiftKey && nearestSqDist < minSqDist) {
-    wythoff = nearest
+  if (!free && nearestSqDist < minSqDist) {
+    settings.wp = nearest[0]
+    settings.wq = nearest[1]
+    settings.wr = nearest[2]
   } else {
-    wythoff = newWythoff
+    settings.wp = newWythoff[0]
+    settings.wq = newWythoff[1]
+    settings.wr = newWythoff[2]
   }
+}
+
+const wyth = e => {
+  const curvature = getCurvature()
+  const { left, top } = e.target.getBoundingClientRect()
+  const x = e.clientX - left
+  const y = e.clientY - top
+  const nr = 1 / rootRatio
+  let u = [x * nr, (rootSize - y) * nr]
+  if (curvature !== 0) {
+    u = u.map(c => -c)
+  }
+  checkWythoff(fromPoincare(u), e.shiftKey)
 
   regenerate()
   e.stopPropagation()
