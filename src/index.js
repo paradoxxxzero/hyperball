@@ -299,46 +299,32 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
             ? [center, vertices[i + 1], vertices[i]]
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
+        if (!validDraws[j].fillValid) {
+          continue
+        }
+
+        const w1 = 1 + j
+        const w2 = 1 + ((j + 1) % 3)
+        const verts = [wythoff[0]]
+        validDraws[j][0] && verts.push(wythoff[w1])
+        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][2] && verts.push(wythoff[w2])
+        validDraws[j][3] && verts.push(wythoff[0])
+
         render3dVertices(
-          wythoff[0],
-          wythoff[1 + j],
-          vert[p],
-          wythoff[1 + ((j + 1) % 3)],
-          j,
+          verts,
+          p,
           fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[p],
           strokeColor,
-          wythoffColor
+          wythoffColor,
+          validDraws[j],
+          // TODO no
+          !validDraws[1].fillValid && !validDraws[2].fillValid
         )
       }
     }
     return
   }
-
-  // let polyVertices = []
-  // if (settings.r === 2 && curvature < 0) {
-  //   // Optimization
-  //   for (let i = 0; i < settings.p; i++) {
-  //     polyVertices.push(vertices[(i * 2) % vertices.length])
-  //   }
-  // } else {
-  //   polyVertices = vertices
-  // }
-  // renderVertices(polyVertices)
-
-  // if (settings.wedges) {
-  //   ctx.save()
-  //   for (let i = 0; i < settings.p; i++) {
-  //     renderVertices(
-  //       [
-  //         center,
-  //         vertices[(i * 2 + parity) % vertices.length],
-  //         vertices[(i * 2 + parity + 1) % vertices.length],
-  //       ],
-  //       true
-  //     )
-  //   }
-  //   ctx.restore()
-  // }
 
   if (!settings.wedgeShade && validDraws.fills === 1) {
     let verts = []
@@ -362,6 +348,9 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
 
     if (fillColor) {
       for (let j = 0; j < 3; j++) {
+        if (!validDraws[j].fillValid) {
+          continue
+        }
         const vert =
           i % 2
             ? [center, vertices[i + 1], vertices[i]]
@@ -371,15 +360,10 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         const w1 = 1 + j
         const w2 = 1 + ((j + 1) % 3)
         const verts = [wythoff[0]]
-
         validDraws[j][0] && verts.push(wythoff[w1])
         validDraws[j][1] && verts.push(vert[p])
         validDraws[j][2] && verts.push(wythoff[w2])
         validDraws[j][3] && verts.push(wythoff[0])
-        if (verts.length < 4) {
-          continue
-        }
-
         renderVertices(
           verts,
           fillColor &&
@@ -415,6 +399,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         if (!validDraws[j][p]) {
           continue
         }
+        !validDraws[j].fillValid && window._i++ < 100 && console.log(validDraws)
         const w = p === 1 ? 1 + j : 1 + ((j + 1) % 3)
         renderVertices(
           [wythoff[w], vert[p]],
@@ -427,6 +412,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     }
   }
 }
+window._i = 0
 const renderVertices = (
   vertices,
   fillColor,
@@ -482,39 +468,37 @@ const renderVertices = (
 }
 
 const render3dVertices = (
-  c,
-  u,
-  v,
-  w,
-  part,
+  vertices,
+  p,
   fillColor,
   strokeColor,
-  wedgesStrokeColor
+  wedgesStrokeColor,
+  validDraws,
+  force,
+  force2
 ) => {
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
   const lineColors = wireframe.geometry.attributes.color.array
   const lineWedgesColors = wythoffframe.geometry.attributes.color.array
-  // TODO: redo curved
   const curved = settings.projection !== 'klein' && !settings.straight
   const precision = Math.max(0.01, (20 - settings.curvePrecision) / 50)
-  const vertices = curved
-    ? [
-        [],
-        curve(c, u, precision),
-        curve(u, v, precision),
-        curve(v, w, precision),
-        curve(w, c, precision),
-      ]
-    : [[c], [u], [v], [w], [c]]
-  const curvature = getCurvature()
-  const p = ((curvature ? 3 : 4) - part) % 3
+  const verticesGroups = []
+  for (let i = 0, n = vertices.length; i < n; i++) {
+    verticesGroups.push(
+      curved
+        ? i === 0
+          ? []
+          : curve(vertices[i - 1], vertices[i], precision)
+        : [vertices[i]]
+    )
+  }
   const centerPos = pos
-  for (let j = 0, m = vertices.length; j < m; j++) {
-    const verts = vertices[j]
+  for (let j = 0, m = verticesGroups.length; j < m; j++) {
+    const group = verticesGroups[j]
 
-    for (let k = 0, n = verts.length; k < n; k++) {
-      const vertex = verts[k]
+    for (let k = 0, n = group.length; k < n; k++) {
+      const vertex = group[k]
       positions[pos * 3] = vertex[0]
       positions[pos * 3 + 1] = vertex[1]
       positions[pos * 3 + 2] = vertex[2]
@@ -530,7 +514,12 @@ const render3dVertices = (
         lineColors[pos * 3] = strokeColor.r
         lineColors[pos * 3 + 1] = strokeColor.g
         lineColors[pos * 3 + 2] = strokeColor.b
-        if ((part > 0 && p === 2 && j === 3) || (p === 1 && j === 2)) {
+        if (
+          (force && p === 0 && validDraws[1] && j === 3) ||
+          (validDraws[p] &&
+            ((p === 1 && j === 2 - !validDraws[0]) ||
+              (p === 2 && j === 3 - !validDraws[1] - !validDraws[0])))
+        ) {
           lineIndex.push(pos - 1, pos)
         }
       }
@@ -539,7 +528,9 @@ const render3dVertices = (
         lineWedgesColors[pos * 3] = wedgesStrokeColor.r
         lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
         lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-        j === 1 && lineWedgesIndex.push(pos - 1, pos)
+        if (validDraws[0] && j === 1) {
+          lineWedgesIndex.push(pos - 1, pos)
+        }
       }
       pos++
     }
@@ -972,6 +963,7 @@ const render = () => {
 
   showStats.showStats && stats.end()
   // DEBUG console.log(draws)
+  console.log(pos)
 }
 
 const translate = offset => {
