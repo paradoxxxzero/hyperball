@@ -50,6 +50,11 @@ export const bisect = (a, b) => {
 
 export const vec = ([xa, ya, za], [xb, yb, zb]) => [xb - xa, yb - ya, zb - za]
 
+export const near = ([xa, ya, za], [xb, yb, zb]) =>
+  Math.abs(xb - xa) < 1e-6 &&
+  Math.abs(yb - ya) < 1e-6 &&
+  Math.abs(zb - za) < 1e-6
+
 export const inTriangle = (P, A, B, C) => {
   if (!curvature) {
     const AP = vec(A, P)

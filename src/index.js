@@ -38,6 +38,7 @@ import {
   inTriangle,
   intersectTriangleByincenter,
   normalize,
+  near,
 } from './math'
 
 let index = []
@@ -74,7 +75,9 @@ let radius,
   rootSize = 200,
   rootRatio,
   rootMargin = 10,
-  interestingPoints = []
+  interestingPoints = [],
+  validDraws = []
+// DEBUG draws = 0
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -337,7 +340,23 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   //   ctx.restore()
   // }
 
-  // W
+  if (!settings.wedgeShade && validDraws.fills === 1) {
+    let verts = []
+    for (let i = 0; i < settings.p; i++) {
+      verts.push(vertices[(i * 2) % vertices.length])
+    }
+    const j = validDraws.findIndex(v => v.fillValid)
+    const p = ((curvature ? 3 : 4) - j) % 3
+    renderVertices(
+      verts,
+      fillColor && fillColor[p].getStyle(),
+      strokeColor && strokeColor.getStyle(),
+      settings.strokeAlpha,
+      settings.strokeWidth
+    )
+    return
+  }
+
   for (let i = 0; i < settings.p * 2; i++) {
     const wythoff = wythoffs[i]
 
@@ -349,14 +368,20 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
 
+        const w1 = 1 + j
+        const w2 = 1 + ((j + 1) % 3)
+        const verts = [wythoff[0]]
+
+        validDraws[j][0] && verts.push(wythoff[w1])
+        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][2] && verts.push(wythoff[w2])
+        validDraws[j][3] && verts.push(wythoff[0])
+        if (verts.length < 4) {
+          continue
+        }
+
         renderVertices(
-          [
-            wythoff[0],
-            wythoff[1 + j],
-            vert[p],
-            wythoff[1 + ((j + 1) % 3)],
-            wythoff[0],
-          ],
+          verts,
           fillColor &&
             (parity === i % 2 ? wedgesFillColor : fillColor)[p].getStyle()
         )
@@ -364,8 +389,12 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     }
     if (wythoffColor) {
       for (let j = 0; j < 3; j++) {
+        if (!validDraws[j][0]) {
+          continue
+        }
+        const w1 = 1 + j
         renderVertices(
-          [wythoff[0], wythoff[1 + j]],
+          [wythoff[0], wythoff[w1]],
           null,
           wythoffColor && wythoffColor.getStyle(),
           settings.strokeWythoffAlpha,
@@ -383,10 +412,12 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         if (p === 0) {
           continue
         }
+        if (!validDraws[j][p]) {
+          continue
+        }
+        const w = p === 1 ? 1 + j : 1 + ((j + 1) % 3)
         renderVertices(
-          p === 1
-            ? [wythoff[1 + j], vert[p]]
-            : [vert[p], wythoff[1 + ((j + 1) % 3)]],
+          [wythoff[w], vert[p]],
           null,
           strokeColor && strokeColor.getStyle(),
           settings.strokeAlpha,
@@ -411,6 +442,7 @@ const renderVertices = (
     const pu = toDisk(project(u))
     const v = vertices[(i + 1) % m]
     const pv = toDisk(project(v))
+    // DEBUG draws++
     ctx.lineTo(pu[0], pu[1])
     if (!straight) {
       const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
@@ -422,6 +454,7 @@ const renderVertices = (
 
       for (let j = 1, n = curvedVertices.length; j < n; j++) {
         const p = toDisk(project(curvedVertices[j]))
+        // DEBUG draws++
         ctx.lineTo(p[0], p[1])
         if (
           settings.projection === 'orthographic' &&
@@ -431,20 +464,20 @@ const renderVertices = (
         }
       }
     }
+    // DEBUG draws++
     ctx.lineTo(pv[0], pv[1])
-
-    if (i === 1 && strokeColor) {
-      ctx.lineWidth = strokeWidth
-      ctx.globalAlpha = strokeAlpha / 100
-      ctx.strokeStyle = strokeColor
-      ctx.stroke()
-    }
   }
 
   if (fillColor) {
     ctx.globalAlpha = settings.fillAlpha / 100
     ctx.fillStyle = fillColor
     ctx.fill()
+  }
+  if (strokeColor) {
+    ctx.lineWidth = strokeWidth
+    ctx.globalAlpha = strokeAlpha / 100
+    ctx.strokeStyle = strokeColor
+    ctx.stroke()
   }
 }
 
@@ -797,6 +830,19 @@ const renderRootTriangle = () => {
       draw(curve(points[i], points[i + 1], precision))
     }
   }
+  for (let j = 0; j < 3; j++) {
+    const p = ((curvature ? 3 : 4) - j) % 3
+    const w1 = 3 + 1 + j
+    const w2 = 3 + 1 + ((j + 1) % 3)
+    validDraws[j] = [
+      !near(triangle[3], triangle[w1]),
+      !near(triangle[p], triangle[w1]),
+      !near(triangle[p], triangle[w2]),
+      !near(triangle[3], triangle[w2]),
+    ]
+    validDraws[j].fillValid = validDraws[j].filter(x => x).length >= 3
+  }
+  validDraws.fills = validDraws.filter(x => x.fillValid).length
 
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
@@ -865,7 +911,7 @@ const render = () => {
   ) {
     return
   }
-
+  // DEBUG draws = 0
   showStats.showStats && stats.begin()
   clear()
 
@@ -925,6 +971,7 @@ const render = () => {
   }
 
   showStats.showStats && stats.end()
+  // DEBUG console.log(draws)
 }
 
 const translate = offset => {
