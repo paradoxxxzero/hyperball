@@ -73,6 +73,7 @@ let radius,
   wythoffframe,
   rootSize = 200,
   rootRatio,
+  rootMargin = 10,
   interestingPoints = []
 
 const getPreset = () =>
@@ -91,9 +92,6 @@ const STROKE_COLOR_TYPES = ['plain', 'colored']
 const init2d = () => {
   canvas = document.createElement('canvas')
   ctx = canvas.getContext('2d')
-  ctx.lineJoin = 'mitter'
-  ctx.lineCap = 'butt'
-  ctx.mitterLimit = 1
   rootCanvas = document.createElement('canvas')
   rootCtx = rootCanvas.getContext('2d')
 }
@@ -766,15 +764,28 @@ const renderRootTriangle = () => {
       ]
     : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
 
+  interestingPoints = [
+    // Snap to center
+    incenter(...edges),
+    // Snap to points
+    ...triangle.slice(0, 3),
+    // Snap to bisectors
+    ...bisectorOpposites(...edges),
+  ]
+
   const points = triangle.map(rootProject)
   const xmax = Math.max(...points.map(p => p[0]))
   const ymax = Math.max(...points.map(p => p[1]))
   const max = Math.max(xmax, ymax)
   rootRatio = rootSize / max
 
-  const root = ([x, y]) => [x * rootRatio, rootSize - y * rootRatio]
+  const root = ([x, y]) => [
+    rootMargin + x * rootRatio,
+    rootMargin + rootSize - y * rootRatio,
+  ]
 
-  rootCanvas.width = xmax * rootRatio + 5
+  rootCanvas.width = xmax * rootRatio + rootMargin * 2
+  rootCanvas.height = rootSize + rootMargin * 2
 
   const draw = c => {
     for (let i = 0; i < c.length; i++) {
@@ -792,7 +803,6 @@ const renderRootTriangle = () => {
     const p = ((curvature ? 3 : 4) - i) % 3
     rootCtx.fillStyle = fillColor && fillColor[p].getStyle()
     rootCtx.beginPath()
-
     if (fillColor) {
       curveChain(
         triangle[3],
@@ -805,6 +815,10 @@ const renderRootTriangle = () => {
       rootCtx.globalAlpha = settings.fillAlpha / 100
       rootCtx.fill()
     }
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const p = ((curvature ? 3 : 4) - i) % 3
 
     if (wythoffColor) {
       rootCtx.beginPath()
@@ -824,11 +838,17 @@ const renderRootTriangle = () => {
     }
   }
 
-  // for (let i = 0; i < interestingPoints.length; i++) {
-  //   rootCtx.fillStyle = 'pink'
-  //   const p = root(rootProject(interestingPoints[i]))
-  //   rootCtx.fillRect(p[0] - 3, p[1] - 3, 6, 6)
-  // }
+  const s = 3
+  rootCtx.lineWidth = 0
+  for (let i = 0; i < interestingPoints.length; i++) {
+    const p = root(rootProject(interestingPoints[i]))
+    rootCtx.beginPath()
+    rootCtx.moveTo(p[0] - s, p[1])
+    rootCtx.lineTo(p[0] + s, p[1])
+    rootCtx.moveTo(p[0], p[1] - s)
+    rootCtx.lineTo(p[0], p[1] + s)
+    rootCtx.stroke()
+  }
 }
 
 const render = () => {
@@ -1017,6 +1037,9 @@ const debounce = (func, wait, immediate) => {
 const continueGenerate = () => regenerate(true)
 
 const styleChange = () => {
+  if (reverting) {
+    return
+  }
   renderRootTriangle()
   render()
 }
@@ -1242,27 +1265,6 @@ const checkWythoff = (newWythoff, free) => {
   }
   const edges = getWythoffTriangle(settings, newWythoff)
 
-  const triangle = curvature
-    ? [
-        intersect(edges[0], edges[1]),
-        intersect(edges[0], edges[2]),
-        intersect(edges[2], edges[1]),
-        edges[3],
-        intersect(edges[4], edges[0]),
-        intersect(edges[5], edges[1]),
-        intersect(edges[6], edges[2]),
-      ]
-    : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
-
-  interestingPoints = [
-    // Snap to center
-    incenter(...edges),
-    // Snap to points
-    ...triangle.slice(0, 3),
-    // Snap to bisectors
-    ...bisectorOpposites(...edges),
-  ]
-
   if (!inTriangle(newWythoff, ...edges)) {
     newWythoff = intersectTriangleByincenter(newWythoff, ...edges)
   }
@@ -1294,8 +1296,8 @@ const checkWythoff = (newWythoff, free) => {
 const wyth = e => {
   const curvature = getCurvature()
   const { left, top } = e.target.getBoundingClientRect()
-  const x = e.clientX - left
-  const y = e.clientY - top
+  const x = e.clientX - left - rootMargin
+  const y = e.clientY - top - rootMargin
   const nr = 1 / rootRatio
   let u = [x * nr, (rootSize - y) * nr]
   if (curvature !== 0) {

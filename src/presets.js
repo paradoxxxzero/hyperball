@@ -404,7 +404,7 @@ export default {
         strokeWythoffAlpha: 100,
         strokeWythoffWidth: 2,
         backgroundColor: '#000000',
-        straight: !false,
+        straight: false,
         tokenPrecision: 2,
         curvePrecision: 19,
       },
