@@ -111,8 +111,8 @@ const init3d = () => {
   camera = new PerspectiveCamera(
     90,
     window.innerWidth / window.innerHeight,
-    0.001,
-    10000
+    0.01,
+    1000
   )
   camera.position.set(0, 0, -1)
   camera.up.set(0, 1, 0)
@@ -174,12 +174,12 @@ const init3d = () => {
     vertexColors: true,
   })
   wireframe = new LineSegments(lineGeometry, lineMaterial)
-  wireframe.scale.setScalar(0.991)
+  wireframe.scale.setScalar(0.999)
   const lineWythoffMaterial = new LineBasicMaterial({
     vertexColors: true,
   })
   wythoffframe = new LineSegments(lineWythoffGeometry, lineWythoffMaterial)
-  wythoffframe.scale.setScalar(0.95)
+  wythoffframe.scale.setScalar(0.999)
   scene.add(wythoffframe)
   scene.add(wireframe)
   scene.add(faces)
@@ -233,7 +233,13 @@ const showStats = { showStats: false }
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
-const views = ['3d poincare', '3d klein', '3d inverted', '3d inside']
+const views = [
+  '3d poincare',
+  '3d klein',
+  '3d inverted',
+  '3d inside',
+  '3d stereographic',
+]
 const project = p => projections[settings.projection](p)
 const black = new Color('black')
 const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
@@ -469,6 +475,7 @@ const render3dVertices = (
   wedgesStrokeColor,
   validDraws
 ) => {
+  const curvature = getCurvature()
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
   const linePositions = wireframe.geometry.attributes.position.array
@@ -486,6 +493,31 @@ const render3dVertices = (
     )
   }
   const centerPos = pos
+
+  if (faces.visible && validDraws.fillValid) {
+    let center = [0, 0, 0]
+    for (let i = 0, n = vertices.length; i < n; i++) {
+      center[0] += vertices[i][0]
+      center[1] += vertices[i][1]
+      center[2] += vertices[i][2]
+    }
+    center[0] /= vertices.length
+    center[1] /= vertices.length
+    center[2] /= vertices.length
+    if (curvature) {
+      center = normalize(center)
+    }
+
+    positions[pos * 3] = center[0]
+    positions[pos * 3 + 1] = center[1]
+    positions[pos * 3 + 2] = center[2]
+    colors[pos * 3] = fillColor.r
+    colors[pos * 3 + 1] = fillColor.g
+    colors[pos * 3 + 2] = fillColor.b
+    pos++
+  }
+
+  const firstPos = pos
   const lineFirstPos = linePos
   const lineWythoffFirstPos = lineWythoffPos
   for (let j = 0, m = verticesGroups.length; j < m; j++) {
@@ -495,7 +527,7 @@ const render3dVertices = (
       const vertex = group[k]
 
       if (faces.visible && validDraws.fillValid) {
-        pos > centerPos + 1 && index.push(centerPos, pos - 1, pos)
+        pos > firstPos && index.push(centerPos, pos - 1, pos)
         positions[pos * 3] = vertex[0]
         positions[pos * 3 + 1] = vertex[1]
         positions[pos * 3 + 2] = vertex[2]
@@ -648,18 +680,21 @@ const generate = async cont => {
         faces.geometry.setDrawRange(0, index.length)
         faces.geometry.attributes.position.needsUpdate = true
         faces.geometry.attributes.color.needsUpdate = true
+        faces.geometry.computeBoundingSphere()
       }
       if (wireframe.visible) {
         wireframe.geometry.setIndex(lineIndex)
         wireframe.geometry.setDrawRange(0, lineIndex.length)
         wireframe.geometry.attributes.position.needsUpdate = true
         wireframe.geometry.attributes.color.needsUpdate = true
+        wireframe.geometry.computeBoundingSphere()
       }
       if (wythoffframe.visible) {
         wythoffframe.geometry.setIndex(lineWythoffIndex)
         wythoffframe.geometry.setDrawRange(0, lineWythoffIndex.length)
         wythoffframe.geometry.attributes.position.needsUpdate = true
         wythoffframe.geometry.attributes.color.needsUpdate = true
+        wythoffframe.geometry.computeBoundingSphere()
       }
       renderer.render(scene, camera)
     }
@@ -1041,16 +1076,12 @@ const pqrChange = () => {
   if (
     settings.wp !== polygons.wp ||
     settings.wq !== polygons.wq ||
-    settings.wr !== polygons.wr
-  ) {
-    checkWythoff([settings.wp, settings.wq, settings.wr], true)
-    regenerate()
-  }
-  if (
+    settings.wr !== polygons.wr ||
     settings.p !== polygons.p ||
     settings.q !== polygons.q ||
     settings.r !== polygons.r
   ) {
+    checkWythoff([settings.wp, settings.wq, settings.wr], true)
     regenerate()
   }
 }
@@ -1116,6 +1147,12 @@ const updateProjection = () => {
   } else if (settings.projection === '3d inside') {
     camera.fov = 90
     camera.position.set(0, 0, 0.1)
+    controls.target.set(0, 0, 0)
+    camera.updateProjectionMatrix()
+    controls.update()
+  } else if (settings.projection === '3d stereographic') {
+    camera.fov = 90
+    camera.position.set(0, 0, -2)
     controls.target.set(0, 0, 0)
     camera.updateProjectionMatrix()
     controls.update()
@@ -1288,21 +1325,6 @@ const fromPoincare = ([x, y]) => {
 
 const checkWythoff = (newWythoff, free) => {
   const curvature = getCurvature()
-  if (dot(newWythoff, newWythoff) - curvature > 1e-5) {
-    if (!curvature) {
-      newWythoff[2] = 0
-    } else {
-      if (curvature < 0) {
-        while (
-          newWythoff[0] * newWythoff[0] + newWythoff[1] * newWythoff[1] >
-          newWythoff[2] * newWythoff[2]
-        ) {
-          newWythoff[2] *= 1.1
-        }
-      }
-      newWythoff = normalize(newWythoff)
-    }
-  }
   const edges = getWythoffTriangle(settings, newWythoff)
 
   if (!inTriangle(newWythoff, ...edges)) {
