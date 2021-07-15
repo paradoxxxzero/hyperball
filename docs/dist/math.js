@@ -38,8 +38,6 @@ export const cross = ([xa, ya, za], [xb, yb, zb], c = curvature) => [
 export const intersect = (a, b) => normalize(cross(a, b))
 
 export const bisect = (a, b) => {
-  // const ab = [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-  // return normalize(cross(ab, cross(a, b)), 1)
   if (curvature < 0) {
     const ab = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
     return normalize(ab, 1)
@@ -185,7 +183,7 @@ export const intersectTriangleByincenter = (P, A, B, C) => {
   const dCP = curvature * dot(C, P) <= 0
   const dbAP = curvature * dot(bisect(B, flip(C)), P) <= 0
   const dbBP = curvature * dot(bisect(flip(C), A), P) <= 0
-  const dbCP = dot(bisect(A, flip(B)), P) >= 0
+  const dbCP = dot(bisect(flip(A), flip(B)), P) >= 0
 
   if (dCP && ((!dAP && !dBP) || (dBP && !dbAP) || (dAP && dbBP))) {
     return intersect(flip(C), IP)
