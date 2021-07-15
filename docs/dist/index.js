@@ -38,12 +38,15 @@ import {
   inTriangle,
   intersectTriangleByincenter,
   normalize,
+  near,
 } from './math.js'
 
 let index = []
 let lineIndex = []
-let lineWedgesIndex = []
+let lineWythoffIndex = []
 let pos = 0
+let linePos = 0
+let lineWythoffPos = 0
 
 // Globals
 let radius,
@@ -73,7 +76,9 @@ let radius,
   wythoffframe,
   rootSize = 200,
   rootRatio,
-  interestingPoints = []
+  rootMargin = 10,
+  interestingPoints = [],
+  validDraws = []
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -91,9 +96,6 @@ const STROKE_COLOR_TYPES = ['plain', 'colored']
 const init2d = () => {
   canvas = document.createElement('canvas')
   ctx = canvas.getContext('2d')
-  ctx.lineJoin = 'mitter'
-  ctx.lineCap = 'butt'
-  ctx.mitterLimit = 1
   rootCanvas = document.createElement('canvas')
   rootCtx = rootCanvas.getContext('2d')
 }
@@ -142,24 +144,26 @@ const init3d = () => {
   )
 
   const lineGeometry = new BufferGeometry()
+  const linePositions = new Float32Array(3 * 1000000)
   lineGeometry.setAttribute(
     'position',
-    new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(linePositions, 3).setUsage(DynamicDrawUsage)
   )
   const lineColors = new Float32Array(1000000)
   lineGeometry.setAttribute(
     'color',
     new BufferAttribute(lineColors, 3).setUsage(DynamicDrawUsage)
   )
-  const lineWedgesGeometry = new BufferGeometry()
-  lineWedgesGeometry.setAttribute(
+  const lineWythoffGeometry = new BufferGeometry()
+  const lineWythoffPositions = new Float32Array(3 * 1000000)
+  lineWythoffGeometry.setAttribute(
     'position',
-    new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffPositions, 3).setUsage(DynamicDrawUsage)
   )
-  const lineWedgesColors = new Float32Array(1000000)
-  lineWedgesGeometry.setAttribute(
+  const lineWythoffColors = new Float32Array(1000000)
+  lineWythoffGeometry.setAttribute(
     'color',
-    new BufferAttribute(lineWedgesColors, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffColors, 3).setUsage(DynamicDrawUsage)
   )
   const material = new MeshBasicMaterial({
     vertexColors: true,
@@ -170,12 +174,12 @@ const init3d = () => {
     vertexColors: true,
   })
   wireframe = new LineSegments(lineGeometry, lineMaterial)
-  wireframe.scale.setScalar(0.99)
-  const lineWedgesMaterial = new LineBasicMaterial({
+  wireframe.scale.setScalar(0.991)
+  const lineWythoffMaterial = new LineBasicMaterial({
     vertexColors: true,
   })
-  wythoffframe = new LineSegments(lineWedgesGeometry, lineWedgesMaterial)
-  wythoffframe.scale.setScalar(0.995)
+  wythoffframe = new LineSegments(lineWythoffGeometry, lineWythoffMaterial)
+  wythoffframe.scale.setScalar(0.95)
   scene.add(wythoffframe)
   scene.add(wireframe)
   scene.add(faces)
@@ -298,67 +302,68 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
             ? [center, vertices[i + 1], vertices[i]]
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
+
+        const w1 = 1 + j
+        const w2 = 1 + ((j + 1) % 3)
+        const verts = [wythoff[0]]
+        validDraws[j][0] && verts.push(wythoff[w1])
+        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][2] && verts.push(wythoff[w2])
+        validDraws[j][3] && verts.push(wythoff[0])
+
         render3dVertices(
-          wythoff[0],
-          wythoff[1 + j],
-          vert[p],
-          wythoff[1 + ((j + 1) % 3)],
-          j,
+          verts,
+          p,
           fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[p],
           strokeColor,
-          wythoffColor
+          wythoffColor,
+          validDraws[j]
         )
       }
     }
     return
   }
 
-  // let polyVertices = []
-  // if (settings.r === 2 && curvature < 0) {
-  //   // Optimization
-  //   for (let i = 0; i < settings.p; i++) {
-  //     polyVertices.push(vertices[(i * 2) % vertices.length])
-  //   }
-  // } else {
-  //   polyVertices = vertices
-  // }
-  // renderVertices(polyVertices)
+  if (!settings.wedgeShade && validDraws.fills === 1) {
+    let verts = []
+    for (let i = 0; i < settings.p; i++) {
+      verts.push(vertices[(i * 2) % vertices.length])
+    }
+    const j = validDraws.findIndex(v => v.fillValid)
+    const p = ((curvature ? 3 : 4) - j) % 3
+    renderVertices(
+      verts,
+      fillColor && fillColor[p].getStyle(),
+      strokeColor && strokeColor.getStyle(),
+      settings.strokeAlpha,
+      settings.strokeWidth
+    )
+    return
+  }
 
-  // if (settings.wedges) {
-  //   ctx.save()
-  //   for (let i = 0; i < settings.p; i++) {
-  //     renderVertices(
-  //       [
-  //         center,
-  //         vertices[(i * 2 + parity) % vertices.length],
-  //         vertices[(i * 2 + parity + 1) % vertices.length],
-  //       ],
-  //       true
-  //     )
-  //   }
-  //   ctx.restore()
-  // }
-
-  // W
   for (let i = 0; i < settings.p * 2; i++) {
     const wythoff = wythoffs[i]
 
     if (fillColor) {
       for (let j = 0; j < 3; j++) {
+        if (!validDraws[j].fillValid) {
+          continue
+        }
         const vert =
           i % 2
             ? [center, vertices[i + 1], vertices[i]]
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
 
+        const w1 = 1 + j
+        const w2 = 1 + ((j + 1) % 3)
+        const verts = [wythoff[0]]
+        validDraws[j][0] && verts.push(wythoff[w1])
+        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][2] && verts.push(wythoff[w2])
+        validDraws[j][3] && verts.push(wythoff[0])
         renderVertices(
-          [
-            wythoff[0],
-            wythoff[1 + j],
-            vert[p],
-            wythoff[1 + ((j + 1) % 3)],
-            wythoff[0],
-          ],
+          verts,
           fillColor &&
             (parity === i % 2 ? wedgesFillColor : fillColor)[p].getStyle()
         )
@@ -366,8 +371,12 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     }
     if (wythoffColor) {
       for (let j = 0; j < 3; j++) {
+        if (!validDraws[j][0]) {
+          continue
+        }
+        const w1 = 1 + j
         renderVertices(
-          [wythoff[0], wythoff[1 + j]],
+          [wythoff[0], wythoff[w1]],
           null,
           wythoffColor && wythoffColor.getStyle(),
           settings.strokeWythoffAlpha,
@@ -385,10 +394,12 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         if (p === 0) {
           continue
         }
+        if (!validDraws[j][p]) {
+          continue
+        }
+        const w = p === 1 ? 1 + j : 1 + ((j + 1) % 3)
         renderVertices(
-          p === 1
-            ? [wythoff[1 + j], vert[p]]
-            : [vert[p], wythoff[1 + ((j + 1) % 3)]],
+          [wythoff[w], vert[p]],
           null,
           strokeColor && strokeColor.getStyle(),
           settings.strokeAlpha,
@@ -398,6 +409,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     }
   }
 }
+
 const renderVertices = (
   vertices,
   fillColor,
@@ -434,13 +446,6 @@ const renderVertices = (
       }
     }
     ctx.lineTo(pv[0], pv[1])
-
-    if (i === 1 && strokeColor) {
-      ctx.lineWidth = strokeWidth
-      ctx.globalAlpha = strokeAlpha / 100
-      ctx.strokeStyle = strokeColor
-      ctx.stroke()
-    }
   }
 
   if (fillColor) {
@@ -448,69 +453,85 @@ const renderVertices = (
     ctx.fillStyle = fillColor
     ctx.fill()
   }
+  if (strokeColor) {
+    ctx.lineWidth = strokeWidth
+    ctx.globalAlpha = strokeAlpha / 100
+    ctx.strokeStyle = strokeColor
+    ctx.stroke()
+  }
 }
 
 const render3dVertices = (
-  c,
-  u,
-  v,
-  w,
-  part,
+  vertices,
+  p,
   fillColor,
   strokeColor,
-  wedgesStrokeColor
+  wedgesStrokeColor,
+  validDraws
 ) => {
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
+  const linePositions = wireframe.geometry.attributes.position.array
   const lineColors = wireframe.geometry.attributes.color.array
-  const lineWedgesColors = wythoffframe.geometry.attributes.color.array
-  // TODO: redo curved
+  const lineWythoffPositions = wythoffframe.geometry.attributes.position.array
+  const lineWythoffColors = wythoffframe.geometry.attributes.color.array
   const curved = settings.projection !== 'klein' && !settings.straight
   const precision = Math.max(0.01, (20 - settings.curvePrecision) / 50)
-  const vertices = curved
-    ? [
-        [],
-        curve(c, u, precision),
-        curve(u, v, precision),
-        curve(v, w, precision),
-        curve(w, c, precision),
-      ]
-    : [[c], [u], [v], [w], [c]]
-  const curvature = getCurvature()
-  const p = ((curvature ? 3 : 4) - part) % 3
+  const verticesGroups = []
+  for (let i = 1, n = vertices.length; i < n; i++) {
+    verticesGroups.push(
+      curved
+        ? curve(vertices[i - 1], vertices[i], precision)
+        : [vertices[i - 1], vertices[i]]
+    )
+  }
   const centerPos = pos
-  for (let j = 0, m = vertices.length; j < m; j++) {
-    const verts = vertices[j]
+  const lineFirstPos = linePos
+  const lineWythoffFirstPos = lineWythoffPos
+  for (let j = 0, m = verticesGroups.length; j < m; j++) {
+    const group = verticesGroups[j]
 
-    for (let k = 0, n = verts.length; k < n; k++) {
-      const vertex = verts[k]
-      positions[pos * 3] = vertex[0]
-      positions[pos * 3 + 1] = vertex[1]
-      positions[pos * 3 + 2] = vertex[2]
+    for (let k = 0, n = group.length; k < n; k++) {
+      const vertex = group[k]
 
-      if (faces.visible) {
+      if (faces.visible && validDraws.fillValid) {
         pos > centerPos + 1 && index.push(centerPos, pos - 1, pos)
+        positions[pos * 3] = vertex[0]
+        positions[pos * 3 + 1] = vertex[1]
+        positions[pos * 3 + 2] = vertex[2]
         colors[pos * 3] = fillColor.r
         colors[pos * 3 + 1] = fillColor.g
         colors[pos * 3 + 2] = fillColor.b
+        pos++
       }
 
-      if (wireframe.visible) {
-        lineColors[pos * 3] = strokeColor.r
-        lineColors[pos * 3 + 1] = strokeColor.g
-        lineColors[pos * 3 + 2] = strokeColor.b
-        if ((part > 0 && p === 2 && j === 3) || (p === 1 && j === 2)) {
-          lineIndex.push(pos - 1, pos)
-        }
+      if (
+        wireframe.visible &&
+        validDraws[p] &&
+        ((p === 1 && j === 1 - !validDraws[0]) ||
+          (p === 2 && j === 2 - !validDraws[1] - !validDraws[0]))
+      ) {
+        linePositions[linePos * 3] = vertex[0]
+        linePositions[linePos * 3 + 1] = vertex[1]
+        linePositions[linePos * 3 + 2] = vertex[2]
+        lineColors[linePos * 3] = strokeColor.r
+        lineColors[linePos * 3 + 1] = strokeColor.g
+        lineColors[linePos * 3 + 2] = strokeColor.b
+        linePos > lineFirstPos && lineIndex.push(linePos - 1, linePos)
+        linePos++
       }
 
-      if (wythoffframe.visible) {
-        lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-        lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-        lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-        j === 1 && lineWedgesIndex.push(pos - 1, pos)
+      if (wythoffframe.visible && validDraws[0] && j === 0) {
+        lineWythoffPositions[lineWythoffPos * 3] = vertex[0]
+        lineWythoffPositions[lineWythoffPos * 3 + 1] = vertex[1]
+        lineWythoffPositions[lineWythoffPos * 3 + 2] = vertex[2]
+        lineWythoffColors[lineWythoffPos * 3] = wedgesStrokeColor.r
+        lineWythoffColors[lineWythoffPos * 3 + 1] = wedgesStrokeColor.g
+        lineWythoffColors[lineWythoffPos * 3 + 2] = wedgesStrokeColor.b
+        lineWythoffPos > lineWythoffFirstPos &&
+          lineWythoffIndex.push(lineWythoffPos - 1, lineWythoffPos)
+        lineWythoffPos++
       }
-      pos++
     }
   }
 }
@@ -580,8 +601,11 @@ const generate = async cont => {
   if (!cont) {
     index = []
     lineIndex = []
-    lineWedgesIndex = []
+    lineWythoffIndex = []
     pos = 0
+    linePos = 0
+    lineWythoffPos = 0
+
     polygons.p = settings.p
     polygons.q = settings.q
     polygons.r = settings.r
@@ -632,8 +656,8 @@ const generate = async cont => {
         wireframe.geometry.attributes.color.needsUpdate = true
       }
       if (wythoffframe.visible) {
-        wythoffframe.geometry.setIndex(lineWedgesIndex)
-        wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+        wythoffframe.geometry.setIndex(lineWythoffIndex)
+        wythoffframe.geometry.setDrawRange(0, lineWythoffIndex.length)
         wythoffframe.geometry.attributes.position.needsUpdate = true
         wythoffframe.geometry.attributes.color.needsUpdate = true
       }
@@ -766,15 +790,28 @@ const renderRootTriangle = () => {
       ]
     : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
 
+  interestingPoints = [
+    // Snap to center
+    incenter(...edges),
+    // Snap to points
+    ...triangle.slice(0, 3),
+    // Snap to bisectors
+    ...bisectorOpposites(...edges),
+  ]
+
   const points = triangle.map(rootProject)
   const xmax = Math.max(...points.map(p => p[0]))
   const ymax = Math.max(...points.map(p => p[1]))
   const max = Math.max(xmax, ymax)
   rootRatio = rootSize / max
 
-  const root = ([x, y]) => [x * rootRatio, rootSize - y * rootRatio]
+  const root = ([x, y]) => [
+    rootMargin + x * rootRatio,
+    rootMargin + rootSize - y * rootRatio,
+  ]
 
-  rootCanvas.width = xmax * rootRatio + 5
+  rootCanvas.width = xmax * rootRatio + rootMargin * 2
+  rootCanvas.height = rootSize + rootMargin * 2
 
   const draw = c => {
     for (let i = 0; i < c.length; i++) {
@@ -786,13 +823,25 @@ const renderRootTriangle = () => {
       draw(curve(points[i], points[i + 1], precision))
     }
   }
+  for (let j = 0; j < 3; j++) {
+    const p = ((curvature ? 3 : 4) - j) % 3
+    const w1 = 3 + 1 + j
+    const w2 = 3 + 1 + ((j + 1) % 3)
+    validDraws[j] = [
+      !near(triangle[3], triangle[w1]),
+      !near(triangle[p], triangle[w1]),
+      !near(triangle[p], triangle[w2]),
+      !near(triangle[3], triangle[w2]),
+    ]
+    validDraws[j].fillValid = validDraws[j].filter(x => x).length >= 3
+  }
+  validDraws.fills = validDraws.filter(x => x.fillValid).length
 
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
     const p = ((curvature ? 3 : 4) - i) % 3
     rootCtx.fillStyle = fillColor && fillColor[p].getStyle()
     rootCtx.beginPath()
-
     if (fillColor) {
       curveChain(
         triangle[3],
@@ -805,6 +854,10 @@ const renderRootTriangle = () => {
       rootCtx.globalAlpha = settings.fillAlpha / 100
       rootCtx.fill()
     }
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const p = ((curvature ? 3 : 4) - i) % 3
 
     if (wythoffColor) {
       rootCtx.beginPath()
@@ -824,11 +877,17 @@ const renderRootTriangle = () => {
     }
   }
 
-  // for (let i = 0; i < interestingPoints.length; i++) {
-  //   rootCtx.fillStyle = 'pink'
-  //   const p = root(rootProject(interestingPoints[i]))
-  //   rootCtx.fillRect(p[0] - 3, p[1] - 3, 6, 6)
-  // }
+  const s = 3
+  rootCtx.lineWidth = 0
+  for (let i = 0; i < interestingPoints.length; i++) {
+    const p = root(rootProject(interestingPoints[i]))
+    rootCtx.beginPath()
+    rootCtx.moveTo(p[0] - s, p[1])
+    rootCtx.lineTo(p[0] + s, p[1])
+    rootCtx.moveTo(p[0], p[1] - s)
+    rootCtx.lineTo(p[0], p[1] + s)
+    rootCtx.stroke()
+  }
 }
 
 const render = () => {
@@ -845,14 +904,15 @@ const render = () => {
   ) {
     return
   }
-
   showStats.showStats && stats.begin()
   clear()
 
   pos = 0
+  linePos = 0
+  lineWythoffPos = 0
   index = []
   lineIndex = []
-  lineWedgesIndex = []
+  lineWythoffIndex = []
   if (getCurvature() > 0) {
     const pol = []
     for (let o = 0; o < polygons.length; o++) {
@@ -882,8 +942,8 @@ const render = () => {
     if (lineIndex.length !== wireframe.geometry.drawRange.count) {
       wireframe.geometry.setIndex(lineIndex)
     }
-    if (lineWedgesIndex.length !== wythoffframe.geometry.drawRange.count) {
-      wythoffframe.geometry.setIndex(lineWedgesIndex)
+    if (lineWythoffIndex.length !== wythoffframe.geometry.drawRange.count) {
+      wythoffframe.geometry.setIndex(lineWythoffIndex)
     }
     if (faces.visible) {
       faces.geometry.setDrawRange(0, index.length)
@@ -896,7 +956,7 @@ const render = () => {
       wireframe.geometry.attributes.color.needsUpdate = true
     }
     if (wythoffframe.visible) {
-      wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+      wythoffframe.geometry.setDrawRange(0, lineWythoffIndex.length)
       wythoffframe.geometry.attributes.position.needsUpdate = true
       wythoffframe.geometry.attributes.color.needsUpdate = true
     }
@@ -1017,6 +1077,9 @@ const debounce = (func, wait, immediate) => {
 const continueGenerate = () => regenerate(true)
 
 const styleChange = () => {
+  if (reverting) {
+    return
+  }
   renderRootTriangle()
   render()
 }
@@ -1242,27 +1305,6 @@ const checkWythoff = (newWythoff, free) => {
   }
   const edges = getWythoffTriangle(settings, newWythoff)
 
-  const triangle = curvature
-    ? [
-        intersect(edges[0], edges[1]),
-        intersect(edges[0], edges[2]),
-        intersect(edges[2], edges[1]),
-        edges[3],
-        intersect(edges[4], edges[0]),
-        intersect(edges[5], edges[1]),
-        intersect(edges[6], edges[2]),
-      ]
-    : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
-
-  interestingPoints = [
-    // Snap to center
-    incenter(...edges),
-    // Snap to points
-    ...triangle.slice(0, 3),
-    // Snap to bisectors
-    ...bisectorOpposites(...edges),
-  ]
-
   if (!inTriangle(newWythoff, ...edges)) {
     newWythoff = intersectTriangleByincenter(newWythoff, ...edges)
   }
@@ -1294,8 +1336,8 @@ const checkWythoff = (newWythoff, free) => {
 const wyth = e => {
   const curvature = getCurvature()
   const { left, top } = e.target.getBoundingClientRect()
-  const x = e.clientX - left
-  const y = e.clientY - top
+  const x = e.clientX - left - rootMargin
+  const y = e.clientY - top - rootMargin
   const nr = 1 / rootRatio
   let u = [x * nr, (rootSize - y) * nr]
   if (curvature !== 0) {
