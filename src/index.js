@@ -43,8 +43,10 @@ import {
 
 let index = []
 let lineIndex = []
-let lineWedgesIndex = []
+let lineWythoffIndex = []
 let pos = 0
+let linePos = 0
+let lineWythoffPos = 0
 
 // Globals
 let radius,
@@ -77,7 +79,6 @@ let radius,
   rootMargin = 10,
   interestingPoints = [],
   validDraws = []
-// DEBUG draws = 0
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -143,24 +144,26 @@ const init3d = () => {
   )
 
   const lineGeometry = new BufferGeometry()
+  const linePositions = new Float32Array(3 * 1000000)
   lineGeometry.setAttribute(
     'position',
-    new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(linePositions, 3).setUsage(DynamicDrawUsage)
   )
   const lineColors = new Float32Array(1000000)
   lineGeometry.setAttribute(
     'color',
     new BufferAttribute(lineColors, 3).setUsage(DynamicDrawUsage)
   )
-  const lineWedgesGeometry = new BufferGeometry()
-  lineWedgesGeometry.setAttribute(
+  const lineWythoffGeometry = new BufferGeometry()
+  const lineWythoffPositions = new Float32Array(3 * 1000000)
+  lineWythoffGeometry.setAttribute(
     'position',
-    new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffPositions, 3).setUsage(DynamicDrawUsage)
   )
-  const lineWedgesColors = new Float32Array(1000000)
-  lineWedgesGeometry.setAttribute(
+  const lineWythoffColors = new Float32Array(1000000)
+  lineWythoffGeometry.setAttribute(
     'color',
-    new BufferAttribute(lineWedgesColors, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffColors, 3).setUsage(DynamicDrawUsage)
   )
   const material = new MeshBasicMaterial({
     vertexColors: true,
@@ -171,12 +174,12 @@ const init3d = () => {
     vertexColors: true,
   })
   wireframe = new LineSegments(lineGeometry, lineMaterial)
-  wireframe.scale.setScalar(0.99)
-  const lineWedgesMaterial = new LineBasicMaterial({
+  wireframe.scale.setScalar(0.991)
+  const lineWythoffMaterial = new LineBasicMaterial({
     vertexColors: true,
   })
-  wythoffframe = new LineSegments(lineWedgesGeometry, lineWedgesMaterial)
-  wythoffframe.scale.setScalar(0.995)
+  wythoffframe = new LineSegments(lineWythoffGeometry, lineWythoffMaterial)
+  wythoffframe.scale.setScalar(0.95)
   scene.add(wythoffframe)
   scene.add(wireframe)
   scene.add(faces)
@@ -299,9 +302,6 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
             ? [center, vertices[i + 1], vertices[i]]
             : [center, vertices[i], vertices[1 + i]]
         const p = ((curvature ? 3 : 4) - j) % 3
-        if (!validDraws[j].fillValid) {
-          continue
-        }
 
         const w1 = 1 + j
         const w2 = 1 + ((j + 1) % 3)
@@ -317,9 +317,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
           fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[p],
           strokeColor,
           wythoffColor,
-          validDraws[j],
-          // TODO no
-          !validDraws[1].fillValid && !validDraws[2].fillValid
+          validDraws[j]
         )
       }
     }
@@ -399,7 +397,6 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         if (!validDraws[j][p]) {
           continue
         }
-        !validDraws[j].fillValid && window._i++ < 100 && console.log(validDraws)
         const w = p === 1 ? 1 + j : 1 + ((j + 1) % 3)
         renderVertices(
           [wythoff[w], vert[p]],
@@ -412,7 +409,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     }
   }
 }
-window._i = 0
+
 const renderVertices = (
   vertices,
   fillColor,
@@ -428,7 +425,6 @@ const renderVertices = (
     const pu = toDisk(project(u))
     const v = vertices[(i + 1) % m]
     const pv = toDisk(project(v))
-    // DEBUG draws++
     ctx.lineTo(pu[0], pu[1])
     if (!straight) {
       const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
@@ -440,7 +436,6 @@ const renderVertices = (
 
       for (let j = 1, n = curvedVertices.length; j < n; j++) {
         const p = toDisk(project(curvedVertices[j]))
-        // DEBUG draws++
         ctx.lineTo(p[0], p[1])
         if (
           settings.projection === 'orthographic' &&
@@ -450,7 +445,6 @@ const renderVertices = (
         }
       }
     }
-    // DEBUG draws++
     ctx.lineTo(pv[0], pv[1])
   }
 
@@ -473,66 +467,71 @@ const render3dVertices = (
   fillColor,
   strokeColor,
   wedgesStrokeColor,
-  validDraws,
-  force,
-  force2
+  validDraws
 ) => {
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
+  const linePositions = wireframe.geometry.attributes.position.array
   const lineColors = wireframe.geometry.attributes.color.array
-  const lineWedgesColors = wythoffframe.geometry.attributes.color.array
+  const lineWythoffPositions = wythoffframe.geometry.attributes.position.array
+  const lineWythoffColors = wythoffframe.geometry.attributes.color.array
   const curved = settings.projection !== 'klein' && !settings.straight
   const precision = Math.max(0.01, (20 - settings.curvePrecision) / 50)
   const verticesGroups = []
-  for (let i = 0, n = vertices.length; i < n; i++) {
+  for (let i = 1, n = vertices.length; i < n; i++) {
     verticesGroups.push(
       curved
-        ? i === 0
-          ? []
-          : curve(vertices[i - 1], vertices[i], precision)
-        : [vertices[i]]
+        ? curve(vertices[i - 1], vertices[i], precision)
+        : [vertices[i - 1], vertices[i]]
     )
   }
   const centerPos = pos
+  const lineFirstPos = linePos
+  const lineWythoffFirstPos = lineWythoffPos
   for (let j = 0, m = verticesGroups.length; j < m; j++) {
     const group = verticesGroups[j]
 
     for (let k = 0, n = group.length; k < n; k++) {
       const vertex = group[k]
-      positions[pos * 3] = vertex[0]
-      positions[pos * 3 + 1] = vertex[1]
-      positions[pos * 3 + 2] = vertex[2]
 
-      if (faces.visible) {
+      if (faces.visible && validDraws.fillValid) {
         pos > centerPos + 1 && index.push(centerPos, pos - 1, pos)
+        positions[pos * 3] = vertex[0]
+        positions[pos * 3 + 1] = vertex[1]
+        positions[pos * 3 + 2] = vertex[2]
         colors[pos * 3] = fillColor.r
         colors[pos * 3 + 1] = fillColor.g
         colors[pos * 3 + 2] = fillColor.b
+        pos++
       }
 
-      if (wireframe.visible) {
-        lineColors[pos * 3] = strokeColor.r
-        lineColors[pos * 3 + 1] = strokeColor.g
-        lineColors[pos * 3 + 2] = strokeColor.b
-        if (
-          (force && p === 0 && validDraws[1] && j === 3) ||
-          (validDraws[p] &&
-            ((p === 1 && j === 2 - !validDraws[0]) ||
-              (p === 2 && j === 3 - !validDraws[1] - !validDraws[0])))
-        ) {
-          lineIndex.push(pos - 1, pos)
-        }
+      if (
+        wireframe.visible &&
+        validDraws[p] &&
+        ((p === 1 && j === 1 - !validDraws[0]) ||
+          (p === 2 && j === 2 - !validDraws[1] - !validDraws[0]))
+      ) {
+        linePositions[linePos * 3] = vertex[0]
+        linePositions[linePos * 3 + 1] = vertex[1]
+        linePositions[linePos * 3 + 2] = vertex[2]
+        lineColors[linePos * 3] = strokeColor.r
+        lineColors[linePos * 3 + 1] = strokeColor.g
+        lineColors[linePos * 3 + 2] = strokeColor.b
+        linePos > lineFirstPos && lineIndex.push(linePos - 1, linePos)
+        linePos++
       }
 
-      if (wythoffframe.visible) {
-        lineWedgesColors[pos * 3] = wedgesStrokeColor.r
-        lineWedgesColors[pos * 3 + 1] = wedgesStrokeColor.g
-        lineWedgesColors[pos * 3 + 2] = wedgesStrokeColor.b
-        if (validDraws[0] && j === 1) {
-          lineWedgesIndex.push(pos - 1, pos)
-        }
+      if (wythoffframe.visible && validDraws[0] && j === 0) {
+        lineWythoffPositions[lineWythoffPos * 3] = vertex[0]
+        lineWythoffPositions[lineWythoffPos * 3 + 1] = vertex[1]
+        lineWythoffPositions[lineWythoffPos * 3 + 2] = vertex[2]
+        lineWythoffColors[lineWythoffPos * 3] = wedgesStrokeColor.r
+        lineWythoffColors[lineWythoffPos * 3 + 1] = wedgesStrokeColor.g
+        lineWythoffColors[lineWythoffPos * 3 + 2] = wedgesStrokeColor.b
+        lineWythoffPos > lineWythoffFirstPos &&
+          lineWythoffIndex.push(lineWythoffPos - 1, lineWythoffPos)
+        lineWythoffPos++
       }
-      pos++
     }
   }
 }
@@ -602,8 +601,11 @@ const generate = async cont => {
   if (!cont) {
     index = []
     lineIndex = []
-    lineWedgesIndex = []
+    lineWythoffIndex = []
     pos = 0
+    linePos = 0
+    lineWythoffPos = 0
+
     polygons.p = settings.p
     polygons.q = settings.q
     polygons.r = settings.r
@@ -654,8 +656,8 @@ const generate = async cont => {
         wireframe.geometry.attributes.color.needsUpdate = true
       }
       if (wythoffframe.visible) {
-        wythoffframe.geometry.setIndex(lineWedgesIndex)
-        wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+        wythoffframe.geometry.setIndex(lineWythoffIndex)
+        wythoffframe.geometry.setDrawRange(0, lineWythoffIndex.length)
         wythoffframe.geometry.attributes.position.needsUpdate = true
         wythoffframe.geometry.attributes.color.needsUpdate = true
       }
@@ -902,14 +904,15 @@ const render = () => {
   ) {
     return
   }
-  // DEBUG draws = 0
   showStats.showStats && stats.begin()
   clear()
 
   pos = 0
+  linePos = 0
+  lineWythoffPos = 0
   index = []
   lineIndex = []
-  lineWedgesIndex = []
+  lineWythoffIndex = []
   if (getCurvature() > 0) {
     const pol = []
     for (let o = 0; o < polygons.length; o++) {
@@ -939,8 +942,8 @@ const render = () => {
     if (lineIndex.length !== wireframe.geometry.drawRange.count) {
       wireframe.geometry.setIndex(lineIndex)
     }
-    if (lineWedgesIndex.length !== wythoffframe.geometry.drawRange.count) {
-      wythoffframe.geometry.setIndex(lineWedgesIndex)
+    if (lineWythoffIndex.length !== wythoffframe.geometry.drawRange.count) {
+      wythoffframe.geometry.setIndex(lineWythoffIndex)
     }
     if (faces.visible) {
       faces.geometry.setDrawRange(0, index.length)
@@ -953,7 +956,7 @@ const render = () => {
       wireframe.geometry.attributes.color.needsUpdate = true
     }
     if (wythoffframe.visible) {
-      wythoffframe.geometry.setDrawRange(0, lineWedgesIndex.length)
+      wythoffframe.geometry.setDrawRange(0, lineWythoffIndex.length)
       wythoffframe.geometry.attributes.position.needsUpdate = true
       wythoffframe.geometry.attributes.color.needsUpdate = true
     }
@@ -962,8 +965,6 @@ const render = () => {
   }
 
   showStats.showStats && stats.end()
-  // DEBUG console.log(draws)
-  console.log(pos)
 }
 
 const translate = offset => {
