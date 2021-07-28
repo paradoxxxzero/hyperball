@@ -39,6 +39,7 @@ import {
   intersectTriangleByincenter,
   normalize,
   near,
+  dist,
 } from './math'
 
 let index = []
@@ -423,15 +424,15 @@ const renderVertices = (
   strokeAlpha,
   strokeWidth
 ) => {
-  ctx.beginPath()
-
-  const straight = settings.projection === 'klein' || settings.straight
+  const verts = []
+  const curvature = getCurvature()
+  const straight = settings.straight
   for (let i = 0, m = vertices.length; i < m; i++) {
     const u = vertices[i]
     const pu = toDisk(project(u))
     const v = vertices[(i + 1) % m]
     const pv = toDisk(project(v))
-    ctx.lineTo(pu[0], pu[1])
+    verts.push([pu[0], pu[1], u])
     if (!straight) {
       const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
       const curvedVertices = curve(
@@ -441,8 +442,9 @@ const renderVertices = (
       )
 
       for (let j = 1, n = curvedVertices.length; j < n; j++) {
-        const p = toDisk(project(curvedVertices[j]))
-        ctx.lineTo(p[0], p[1])
+        const vt = curvedVertices[j]
+        const p = toDisk(project(vt))
+        verts.push([p[0], p[1], vt])
         if (
           settings.projection === 'orthographic' &&
           (p[0] > width || p[0] < 0 || p[1] > height || p[1] < 0)
@@ -451,19 +453,41 @@ const renderVertices = (
         }
       }
     }
-    ctx.lineTo(pv[0], pv[1])
+    verts.push([pv[0], pv[1], v])
   }
 
   if (fillColor) {
+    ctx.beginPath()
     ctx.globalAlpha = settings.fillAlpha / 100
     ctx.fillStyle = fillColor
+    for (let i = 0, n = verts.length; i < n; i++) {
+      ctx.lineTo(verts[i][0], verts[i][1])
+    }
     ctx.fill()
   }
   if (strokeColor) {
-    ctx.lineWidth = strokeWidth
     ctx.globalAlpha = strokeAlpha / 100
     ctx.strokeStyle = strokeColor
-    ctx.stroke()
+    if (curvature < 0 && settings.strokeScaled) {
+      for (let i = 1, n = verts.length; i < n; i++) {
+        ctx.lineWidth =
+          (2 * strokeWidth) / (dist(verts[i - 1][2]) + dist(verts[i][2]))
+        if (ctx.lineWidth < 0.01) {
+          break
+        }
+        ctx.beginPath()
+        ctx.moveTo(verts[i - 1][0], verts[i - 1][1])
+        ctx.lineTo(verts[i][0], verts[i][1])
+        ctx.stroke()
+      }
+    } else {
+      ctx.beginPath()
+      ctx.lineWidth = strokeWidth
+      for (let i = 0, n = verts.length; i < n; i++) {
+        ctx.lineTo(verts[i][0], verts[i][1])
+      }
+      ctx.stroke()
+    }
   }
 }
 
@@ -897,7 +921,7 @@ const renderRootTriangle = () => {
     if (wythoffColor) {
       rootCtx.beginPath()
       curveChain(triangle[3], triangle[4 + i])
-      rootCtx.lineWidth = settings.strokeWythoffWidth
+      rootCtx.lineWidth = Math.min(5, settings.strokeWythoffWidth)
       rootCtx.globalAlpha = settings.strokeWythoffAlpha / 100
       rootCtx.strokeStyle = wythoffColor.getStyle()
       rootCtx.stroke()
@@ -905,7 +929,7 @@ const renderRootTriangle = () => {
     if (strokeColor) {
       rootCtx.beginPath()
       curveChain(triangle[4 + i], triangle[p], triangle[4 + ((i + 1) % 3)])
-      rootCtx.lineWidth = settings.strokeWidth
+      rootCtx.lineWidth = Math.min(5, settings.strokeWidth)
       rootCtx.globalAlpha = settings.strokeAlpha / 100
       rootCtx.strokeStyle = strokeColor.getStyle()
       rootCtx.stroke()
@@ -1193,7 +1217,8 @@ strokeGui
   .add(settings, 'strokeColorShift', -359, 359, 1)
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(styleChange)
-strokeGui.add(settings, 'strokeWidth', 0.1, 10, 0.1).onChange(styleChange)
+strokeGui.add(settings, 'strokeWidth', 0.1, 30, 0.1).onChange(styleChange)
+strokeGui.add(settings, 'strokeScaled').onChange(styleChange)
 strokeGui.addColor(settings, 'backgroundColor').onChange(styleChange)
 strokeGui
   .add(settings, 'strokeWythoff', STROKE_COLOR_TYPES)
@@ -1204,7 +1229,7 @@ strokeGui
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeWythoffAlpha', 0, 100, 1).onChange(styleChange)
 strokeGui
-  .add(settings, 'strokeWythoffWidth', 0.1, 10, 0.1)
+  .add(settings, 'strokeWythoffWidth', 0.1, 30, 0.1)
   .onChange(styleChange)
 
 gui.addColor(settings, 'backgroundColor').onChange(render)
@@ -1299,6 +1324,10 @@ window.hyperball = {
   scene,
   camera,
   controls,
+  canvas,
+  ctx,
+  rootCanvas,
+  rootCtx,
 }
 
 renderer.domElement.id = 'c3d'

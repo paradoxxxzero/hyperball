@@ -26,8 +26,8 @@ export const normalize = ([x, y, z], c = curvature) => {
   return [x * k, y * k, z * k]
 }
 
-export const dot = ([xa, ya, za], [xb, yb, zb]) =>
-  xa * xb + ya * yb + curvature * za * zb
+export const dot = ([xa, ya, za], [xb, yb, zb], c = curvature) =>
+  xa * xb + ya * yb + c * za * zb
 
 export const cross = ([xa, ya, za], [xb, yb, zb], c = curvature) => [
   ya * zb - za * yb,
@@ -46,6 +46,7 @@ export const bisect = (a, b) => {
   return intersect(cross(a, b), halfab)
 }
 
+export const dist = a => Math.sqrt(dot(a, a, 1))
 export const vec = ([xa, ya, za], [xb, yb, zb]) => [xb - xa, yb - ya, zb - za]
 
 export const near = ([xa, ya, za], [xb, yb, zb]) =>
