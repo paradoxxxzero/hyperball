@@ -1107,6 +1107,7 @@ const pqrChange = () => {
     settings.q !== polygons.q ||
     settings.r !== polygons.r
   ) {
+    renderRootTriangle()
     checkWythoff([settings.wp, settings.wq, settings.wr], true)
     regenerate()
   }
@@ -1356,6 +1357,7 @@ const fromPoincare = ([x, y]) => {
 
 const checkWythoff = (newWythoff, free) => {
   const curvature = getCurvature()
+  newWythoff = normalize(newWythoff)
   const edges = getWythoffTriangle(settings, newWythoff)
 
   if (!inTriangle(newWythoff, ...edges)) {
