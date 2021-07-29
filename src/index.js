@@ -132,8 +132,10 @@ const init3d = () => {
   controls.minDistance = 0
   controls.maxDistance = 100
 
-  const positions = new Float32Array(3 * 1000000)
-  const colors = new Float32Array(1000000)
+  const MAX = 1000000
+
+  const positions = new Float32Array(3 * MAX)
+  const colors = new Float32Array(3 * MAX)
   const geometry = new BufferGeometry()
   geometry.setAttribute(
     'position',
@@ -145,23 +147,23 @@ const init3d = () => {
   )
 
   const lineGeometry = new BufferGeometry()
-  const linePositions = new Float32Array(3 * 1000000)
+  const linePositions = new Float32Array(3 * MAX)
   lineGeometry.setAttribute(
     'position',
     new BufferAttribute(linePositions, 3).setUsage(DynamicDrawUsage)
   )
-  const lineColors = new Float32Array(1000000)
+  const lineColors = new Float32Array(3 * MAX)
   lineGeometry.setAttribute(
     'color',
     new BufferAttribute(lineColors, 3).setUsage(DynamicDrawUsage)
   )
   const lineWythoffGeometry = new BufferGeometry()
-  const lineWythoffPositions = new Float32Array(3 * 1000000)
+  const lineWythoffPositions = new Float32Array(3 * MAX)
   lineWythoffGeometry.setAttribute(
     'position',
     new BufferAttribute(lineWythoffPositions, 3).setUsage(DynamicDrawUsage)
   )
-  const lineWythoffColors = new Float32Array(1000000)
+  const lineWythoffColors = new Float32Array(3 * MAX)
   lineWythoffGeometry.setAttribute(
     'color',
     new BufferAttribute(lineWythoffColors, 3).setUsage(DynamicDrawUsage)
@@ -793,17 +795,17 @@ const clear = () => {
     scene.background = new Color(settings.backgroundColor)
     faces.material.transparent = settings.fillAlpha !== 100
     faces.material.opacity = settings.fillAlpha / 100
-    faces.visible = settings.fillAlpha
+    faces.visible = !!settings.fillAlpha
 
     wireframe.material.transparent = settings.strokeAlpha !== 100
     wireframe.material.opacity = settings.strokeAlpha / 100
     wireframe.material.linewidth = settings.strokeWidth
-    wireframe.visible = settings.strokeAlpha
+    wireframe.visible = !!settings.strokeAlpha
 
     wythoffframe.material.transparent = settings.strokeWythoffAlpha !== 100
     wythoffframe.material.opacity = settings.strokeWythoffAlpha / 100
     wythoffframe.material.linewidth = settings.strokeWythoffWidth
-    wythoffframe.visible = settings.strokeWythoffAlpha
+    wythoffframe.visible = !!settings.strokeWythoffAlpha
 
     faces.geometry.setDrawRange(0, 0)
     wireframe.geometry.setDrawRange(0, 0)
