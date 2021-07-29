@@ -20,14 +20,15 @@ export const setTokenPrecision = precision => {
 export const normalize = ([x, y, z], c = curvature) => {
   const nr = c * x * x + c * y * y + z * z
   if (nr === 0) {
-    return [0, 0, 0]
+    return [0, 0, curvature ? 1 : 0]
   }
-  const k = (c === -1 ? Math.sign(z) : 1) / Math.sqrt(nr)
+  // abs here is not necessary but prevent some crashes when normalizing wythoff
+  const k = (c === -1 ? Math.sign(z) : 1) / Math.sqrt(Math.abs(nr))
   return [x * k, y * k, z * k]
 }
 
-export const dot = ([xa, ya, za], [xb, yb, zb]) =>
-  xa * xb + ya * yb + curvature * za * zb
+export const dot = ([xa, ya, za], [xb, yb, zb], c = curvature) =>
+  xa * xb + ya * yb + c * za * zb
 
 export const cross = ([xa, ya, za], [xb, yb, zb], c = curvature) => [
   ya * zb - za * yb,
@@ -46,6 +47,7 @@ export const bisect = (a, b) => {
   return intersect(cross(a, b), halfab)
 }
 
+export const dist = a => Math.sqrt(dot(a, a, 1))
 export const vec = ([xa, ya, za], [xb, yb, zb]) => [xb - xa, yb - ya, zb - za]
 
 export const near = ([xa, ya, za], [xb, yb, zb]) =>
