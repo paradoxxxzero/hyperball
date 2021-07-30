@@ -18,12 +18,15 @@ export const setTokenPrecision = precision => {
   tokenSize = 10 ** precision
 }
 export const normalize = ([x, y, z], c = curvature) => {
-  const nr = c * x * x + c * y * y + z * z
+  let nr = c * x * x + c * y * y + z * z
   if (nr === 0) {
     return [0, 0, curvature ? 1 : 0]
   }
-  // abs here is not necessary but prevent some crashes when normalizing wythoff
-  const k = (c === -1 ? Math.sign(z) : 1) / Math.sqrt(Math.abs(nr))
+  // This is not necessary but prevent some crashes when normalizing wythoff
+  if (nr < 0) {
+    nr *= -1
+  }
+  const k = (c === -1 ? Math.sign(z) || 1 : 1) / Math.sqrt(nr)
   return [x * k, y * k, z * k]
 }
 
@@ -36,7 +39,9 @@ export const cross = ([xa, ya, za], [xb, yb, zb], c = curvature) => [
   c * (xa * yb - ya * xb),
 ]
 
-export const intersect = (a, b) => normalize(cross(a, b))
+export const swap = (a, b, p) => (p ? [b, a] : [a, b])
+
+export const intersect = (a, b, p) => normalize(cross(...swap(a, b, p)))
 
 export const bisect = (a, b) => {
   if (curvature < 0) {
@@ -44,7 +49,7 @@ export const bisect = (a, b) => {
     return normalize(ab, 1)
   }
   const halfab = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]), 0.5 * (a[2] + b[2])]
-  return intersect(cross(a, b), halfab)
+  return intersect(cross(a, b), halfab, false)
 }
 
 export const dist = a => Math.sqrt(dot(a, a, 1))
@@ -71,9 +76,14 @@ export const inTriangle = (P, A, B, C) => {
       Math.sign(ABAP) === Math.sign(BCBP) && Math.sign(BCBP) === Math.sign(CACP)
     )
   }
-  return dot(A, P) <= 0 && dot(B, P) <= 0 && curvature * dot(C, P) >= 0
+  return (
+    curvature * dot(A, P) >= 0 &&
+    curvature * dot(B, P) >= 0 &&
+    curvature * dot(C, P) >= 0
+  )
 }
-const flip = ([x, y, z]) => (curvature > 0 ? [-x, -y, -z] : [x, y, z])
+
+export const flip = ([x, y, z]) => (curvature > 0 ? [-x, -y, -z] : [x, y, z])
 
 export const incenter = (A, B, C) => {
   if (!curvature) {
@@ -90,7 +100,7 @@ export const incenter = (A, B, C) => {
       nr * (a * za + b * zb + c * zc),
     ]
   }
-  return intersect(bisect(A, B), bisect(B, flip(C)))
+  return intersect(bisect(A, C), bisect(C, B), true)
 }
 
 export const bisectorOpposites = (A, B, C) => {
@@ -127,9 +137,9 @@ export const bisectorOpposites = (A, B, C) => {
     ]
   }
   return [
-    intersect(C, bisect(A, B)),
-    intersect(A, bisect(flip(B), C)),
-    intersect(B, bisect(C, flip(A))),
+    intersect(C, bisect(A, B), true),
+    intersect(A, bisect(B, C), true),
+    intersect(B, bisect(C, A), true),
   ]
 }
 
@@ -180,20 +190,17 @@ export const intersectTriangleByincenter = (P, A, B, C) => {
   }
   const I = incenter(A, B, C)
   const IP = normalize(cross(I, P), 1)
-  const dAP = dot(A, P) >= 0
-  const dBP = dot(B, P) >= 0
-  const dCP = curvature * dot(C, P) <= 0
-  const dbAP = curvature * dot(bisect(B, flip(C)), P) <= 0
-  const dbBP = curvature * dot(bisect(flip(C), A), P) <= 0
-  const dbCP = dot(bisect(flip(A), flip(B)), P) >= 0
+  const dAP = dot(bisect(B, C), P) >= 0
+  const dBP = dot(bisect(C, A), P) >= 0
+  const dCP = dot(bisect(A, B), P) >= 0
 
-  if (dCP && ((!dAP && !dBP) || (dBP && !dbAP) || (dAP && dbBP))) {
-    return intersect(flip(C), IP)
+  if (dCP && !dBP) {
+    return intersect(A, IP, false)
+  } else if (dAP && !dCP) {
+    return intersect(B, IP, false)
+  } else if (dBP && !dAP) {
+    return intersect(C, IP, false)
   }
-  if (dBP && ((!dAP && !dCP) || (dCP && dbAP) || (dAP && !dbCP))) {
-    return intersect(B, IP)
-  }
-  return intersect(A, IP)
 }
 
 export const reflect = (a, b) => {
@@ -225,8 +232,8 @@ export const getToken = triangle => {
 }
 
 export const reflectOn = (triangle, i, order, check, tokens) => {
-  const j = (i + 1) % 3
-  const k = (i + 2) % 3
+  let j = (i + 1) % 3
+  let k = (i + 2) % 3
   const newTriangle = [[], [], [], []]
   if (curvature === 0) {
     const reflector = [
@@ -306,7 +313,7 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
     let wytk = normalize(cross(triangle[k], wyt), 1)
     wytj = reflect(wytj, triangle[i])
     wytk = reflect(wytk, triangle[i])
-    newTriangle[3] = intersect(wytj, wytk)
+    newTriangle[3] = intersect(wytj, wytk, false)
 
     newTriangle[4] = reflect(triangle[4], triangle[i])
     newTriangle[5] = reflect(triangle[5], triangle[i])
@@ -316,7 +323,7 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
     newTriangle[i][1] = -triangle[i][1]
     newTriangle[i][2] = -triangle[i][2]
   }
-
+  newTriangle.parity = 1 - triangle.parity
   const token = getToken(newTriangle, tokenSize)
   if (check) {
     for (let i = order; i >= 0; i--) {
@@ -339,47 +346,52 @@ export const getRootTriangle = ({ p, q, r }) => {
       Math.cos(pAngle) +
       (Math.sin(pAngle) * Math.cos(qAngle)) / Math.sin(qAngle)
     return [
-      [Math.sin(pAngle), Math.cos(pAngle), 0],
-      [0, a, 0],
       [0, 0, 0],
+      [0, -a, 0],
+      [-Math.sin(pAngle), -Math.cos(pAngle), 0],
     ]
   }
 
   const a =
-    (curvature * (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle))) /
-    Math.sin(pAngle)
-  const b = curvature * Math.cos(qAngle)
+    (Math.cos(pAngle) * Math.cos(qAngle) + Math.cos(rAngle)) / Math.sin(pAngle)
+  const b = Math.cos(qAngle)
   const c = Math.sqrt(curvature * (1 - a * a - b * b))
   return [
-    [1, 0, 0],
+    [-b, -a, c],
     [-Math.cos(pAngle), Math.sin(pAngle), 0],
-    [b, a, c],
+    [1, 0, 0],
   ]
 }
 
 /*
     1
    |q\
-   |  \   2->
+   |  \  0->
    |   \
-0->|   r\ 0
+2->|   r\ 2
    |   /
    |p/   1->
-   2
+   0
    C
 */
 
-export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
-  const parity = triangle.parity
-  const intx = order % 2 ? intersect : (a, b) => intersect(b, a)
+export const getPolygon = (
+  triangle,
+  p,
+  order,
+  polygons,
+  triangles,
+  tokens
+  // r
+) => {
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
   tokens[order] = tokens[order] || {}
-
+  const parity = triangle.parity
   const vertices = []
   const wythoffs = []
   if (order > 0) {
-    if (!(triangle = reflectOn(triangle, 2, order, true, tokens))) {
+    if (!(triangle = reflectOn(triangle, 0, order, true, tokens))) {
       return
     }
   } else {
@@ -388,57 +400,77 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
 
   let center
   if (!curvature) {
-    center = [...triangle[2]]
-    vertices.push([...triangle[1]], [...triangle[0]])
+    center = [...triangle[0]]
+    vertices.push([...triangle[2]], [...triangle[1]])
     wythoffs.push([
       [...triangle[3]],
       [...triangle[4]],
       [...triangle[5]],
       [...triangle[6]],
     ])
+    // r(triangle.slice(0, 3), 'red')
   } else {
-    center = intx(triangle[0], triangle[1])
+    center = intersect(triangle[2], triangle[1], triangle.parity)
     vertices.push(
-      intx(triangle[0], triangle[2]),
-      intx(triangle[2], triangle[1])
+      intersect(triangle[1], triangle[0], triangle.parity),
+      intersect(triangle[0], triangle[2], triangle.parity)
     )
     wythoffs.push([
-      [...triangle[3].map(x => (curvature <= 0 || order % 2 ? x : -x))],
-      intx(triangle[4], triangle[0]),
-      intx(triangle[5], triangle[1]),
-      intx(triangle[6], triangle[2]),
+      [...triangle[3].map(x => (curvature < 0 || triangle.parity ? x : -x))],
+      intersect(triangle[1], triangle[5], triangle.parity),
+      intersect(triangle[2], triangle[6], triangle.parity),
+      intersect(triangle[0], triangle[4], triangle.parity),
     ])
+    // r(
+    //   [
+    //     intersect(triangle[0], triangle[1], triangle.parity),
+    //     intersect(triangle[1], triangle[2], triangle.parity),
+    //     intersect(triangle[2], triangle[0], triangle.parity),
+    //   ],
+    //   'red'
+    // )
   }
-
   const rootEdges = [...triangle]
-  rootEdges.parity = 1 - parity
+  rootEdges.parity = triangle.parity
   triangles[order].push(rootEdges)
 
   for (let n = 0; n < p * 2 - 1; n++) {
-    triangle = reflectOn(triangle, (n + 1) % 2, order, false, tokens)
+    triangle = reflectOn(triangle, 1 + ((n + 1) % 2), order, true, tokens)
+    if (!triangle) {
+      break
+    }
     if (!curvature) {
-      vertices.push([...triangle[(n + 1) % 2]])
+      vertices.push([...triangle[1 + ((n + 1) % 2)]])
       wythoffs.push([
         [...triangle[3]],
         [...triangle[4]],
         [...triangle[5]],
         [...triangle[6]],
       ])
+      // r([center, ...triangle.slice(1, 3)], 'orangered')
     } else {
-      vertices.push(intx(triangle[2], triangle[n % 2]))
+      vertices.push(
+        n % 2
+          ? intersect(triangle[0], triangle[2], triangle.parity)
+          : intersect(triangle[1], triangle[0], triangle.parity)
+      )
+      // r(
+      //   [
+      //     intersect(triangle[0], triangle[1], triangle.parity),
+      //     intersect(triangle[1], triangle[2], triangle.parity),
+      //     intersect(triangle[2], triangle[0], triangle.parity),
+      //   ],
+      //   'orangered'
+      // )
       wythoffs.push([
-        [
-          ...triangle[3].map(x =>
-            curvature <= 0 || n % 2 !== order % 2 ? x : -x
-          ),
-        ],
-        intx(triangle[n % 2 ? 4 : 0], triangle[n % 2 ? 0 : 4]),
-        intx(triangle[n % 2 ? 5 : 1], triangle[n % 2 ? 1 : 5]),
-        intx(triangle[n % 2 ? 6 : 2], triangle[n % 2 ? 2 : 6]),
+        [...triangle[3].map(x => (curvature < 0 || triangle.parity ? x : -x))],
+        intersect(triangle[1], triangle[5], triangle.parity),
+        intersect(triangle[2], triangle[6], triangle.parity),
+        intersect(triangle[0], triangle[4], triangle.parity),
       ])
     }
     const subEdges = [...triangle]
-    subEdges.parity = n % 2 === 0 ? parity : 1 - parity
+    subEdges.parity = triangle.parity
     triangles[order].push(subEdges)
   }
 
@@ -575,7 +607,7 @@ export const perp = (w, a, b) => {
       0,
     ]
   } else {
-    return intersect(normalize(cross(a, w), 1), a)
+    return intersect(normalize(cross(a, w), 1), a, false)
   }
 }
 
@@ -585,7 +617,7 @@ export const perps = (w, triangle) => {
     const a = triangle[i]
 
     if (curvature === 0) {
-      const b = triangle[(i + 1) % 3]
+      const b = triangle[(i + 2) % 3]
       if (a[0] === b[0]) {
         perps.push([0, w[1], 0])
         continue
@@ -602,5 +634,6 @@ export const perps = (w, triangle) => {
       perps.push(normalize(cross(a, w), 1))
     }
   }
+
   return perps
 }

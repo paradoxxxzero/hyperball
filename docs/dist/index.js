@@ -240,8 +240,8 @@ const views = [
   '3d poincare',
   '3d klein',
   '3d inverted',
-  '3d inside',
   '3d stereographic',
+  '3d orthographic',
 ]
 const project = p => projections[settings.projection](p)
 const black = new Color('black')
@@ -249,7 +249,6 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (vertices.length < 2) {
     return
   }
-  const curvature = getCurvature()
   let fillColor = null,
     wedgesFillColor = null,
     strokeColor = null,
@@ -257,9 +256,9 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
 
   if (settings.fillAlpha) {
     fillColor = [
-      new Color(settings.fillColorR),
       new Color(settings.fillColorP),
       new Color(settings.fillColorQ),
+      new Color(settings.fillColorR),
     ]
     if (settings.fill === 'colored') {
       fillColor[0].offsetHSL((order * settings.fillColorShift) / 360, 0, 0)
@@ -302,28 +301,27 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   }
 
   if (backend === '3d') {
-    for (let i = 0; i < settings.p * 2; i++) {
+    for (let i = 0; i < vertices.length - 1; i++) {
       const wythoff = wythoffs[i]
 
       for (let j = 0; j < 3; j++) {
         const vert =
           i % 2
-            ? [center, vertices[i + 1], vertices[i]]
-            : [center, vertices[i], vertices[1 + i]]
-        const p = ((curvature ? 3 : 4) - j) % 3
+            ? [center, vertices[i], vertices[1 + i]]
+            : [center, vertices[i + 1], vertices[i]]
 
         const w1 = 1 + j
         const w2 = 1 + ((j + 1) % 3)
         const verts = [wythoff[0]]
         validDraws[j][0] && verts.push(wythoff[w1])
-        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][1] && verts.push(vert[j])
         validDraws[j][2] && verts.push(wythoff[w2])
         validDraws[j][3] && verts.push(wythoff[0])
 
         render3dVertices(
           verts,
-          p,
-          fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[p],
+          j,
+          fillColor && (parity === i % 2 ? wedgesFillColor : fillColor)[j],
           strokeColor,
           wythoffColor,
           validDraws[j]
@@ -335,14 +333,13 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
 
   if (!settings.wedgeShade && validDraws.fills === 1) {
     let verts = []
-    for (let i = 0; i < settings.p; i++) {
-      verts.push(vertices[(i * 2) % vertices.length])
+    for (let i = 0; i < ~~(vertices.length / 2); i++) {
+      verts.push(vertices[1 + ((i * 2) % vertices.length)])
     }
     const j = validDraws.findIndex(v => v.fillValid)
-    const p = ((curvature ? 3 : 4) - j) % 3
     renderVertices(
       verts,
-      fillColor && fillColor[p].getStyle(),
+      fillColor && fillColor[j].getStyle(),
       strokeColor && strokeColor.getStyle(),
       settings.strokeAlpha,
       settings.strokeWidth
@@ -350,31 +347,30 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     return
   }
 
-  for (let i = 0; i < settings.p * 2; i++) {
+  for (let i = 0; i < vertices.length - 1; i++) {
     const wythoff = wythoffs[i]
+    const vert =
+      i % 2
+        ? [center, vertices[i], vertices[1 + i]]
+        : [center, vertices[1 + i], vertices[i]]
 
     if (fillColor) {
       for (let j = 0; j < 3; j++) {
         if (!validDraws[j].fillValid) {
           continue
         }
-        const vert =
-          i % 2
-            ? [center, vertices[i + 1], vertices[i]]
-            : [center, vertices[i], vertices[1 + i]]
-        const p = ((curvature ? 3 : 4) - j) % 3
 
         const w1 = 1 + j
         const w2 = 1 + ((j + 1) % 3)
         const verts = [wythoff[0]]
         validDraws[j][0] && verts.push(wythoff[w1])
-        validDraws[j][1] && verts.push(vert[p])
+        validDraws[j][1] && verts.push(vert[j])
         validDraws[j][2] && verts.push(wythoff[w2])
         validDraws[j][3] && verts.push(wythoff[0])
         renderVertices(
           verts,
           fillColor &&
-            (parity === i % 2 ? wedgesFillColor : fillColor)[p].getStyle()
+            (parity === i % 2 ? wedgesFillColor : fillColor)[j].getStyle()
         )
       }
     }
@@ -383,9 +379,8 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         if (!validDraws[j][0]) {
           continue
         }
-        const w1 = 1 + j
         renderVertices(
-          [wythoff[0], wythoff[w1]],
+          [wythoff[0], wythoff[1 + j]],
           null,
           wythoffColor && wythoffColor.getStyle(),
           settings.strokeWythoffAlpha,
@@ -394,27 +389,13 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
       }
     }
     if (strokeColor) {
-      for (let j = 0; j < 3; j++) {
-        const vert =
-          i % 2
-            ? [center, vertices[i + 1], vertices[i]]
-            : [center, vertices[i], vertices[1 + i]]
-        const p = ((curvature ? 3 : 4) - j) % 3
-        if (p === 0) {
-          continue
-        }
-        if (!validDraws[j][p]) {
-          continue
-        }
-        const w = p === 1 ? 1 + j : 1 + ((j + 1) % 3)
-        renderVertices(
-          [wythoff[w], vert[p]],
-          null,
-          strokeColor && strokeColor.getStyle(),
-          settings.strokeAlpha,
-          settings.strokeWidth
-        )
-      }
+      renderVertices(
+        vert.slice(1, 3),
+        null,
+        strokeColor && strokeColor.getStyle(),
+        settings.strokeAlpha,
+        settings.strokeWidth
+      )
     }
   }
 }
@@ -495,7 +476,7 @@ const renderVertices = (
 
 const render3dVertices = (
   vertices,
-  p,
+  j,
   fillColor,
   strokeColor,
   wedgesStrokeColor,
@@ -546,8 +527,8 @@ const render3dVertices = (
   const firstPos = pos
   const lineFirstPos = linePos
   const lineWythoffFirstPos = lineWythoffPos
-  for (let j = 0, m = verticesGroups.length; j < m; j++) {
-    const group = verticesGroups[j]
+  for (let i = 0, m = verticesGroups.length; i < m; i++) {
+    const group = verticesGroups[i]
 
     for (let k = 0, n = group.length; k < n; k++) {
       const vertex = group[k]
@@ -565,9 +546,10 @@ const render3dVertices = (
 
       if (
         wireframe.visible &&
-        validDraws[p] &&
-        ((p === 1 && j === 1 - !validDraws[0]) ||
-          (p === 2 && j === 2 - !validDraws[1] - !validDraws[0]))
+        ((j === 1 &&
+          validDraws[2] &&
+          i === 2 - !validDraws[0] - !validDraws[1]) ||
+          (j === 2 && validDraws[1] && i === 1 - !validDraws[0]))
       ) {
         linePositions[linePos * 3] = vertex[0]
         linePositions[linePos * 3 + 1] = vertex[1]
@@ -579,7 +561,7 @@ const render3dVertices = (
         linePos++
       }
 
-      if (wythoffframe.visible && validDraws[0] && j === 0) {
+      if (wythoffframe.visible && validDraws[0] && i === 0) {
         lineWythoffPositions[lineWythoffPos * 3] = vertex[0]
         lineWythoffPositions[lineWythoffPos * 3 + 1] = vertex[1]
         lineWythoffPositions[lineWythoffPos * 3 + 2] = vertex[2]
@@ -605,6 +587,7 @@ const createPolygon = (triangle, order) => {
     polygons,
     triangles,
     tokens
+    // renderVertices
   )
 
   if (!polygon) {
@@ -643,8 +626,14 @@ const nextLayer = () => {
   )
 }
 const getWythoffTriangle = ({ p, q, r, wp, wq, wr }) => {
+  const curvature = getCurvature()
   const root = getRootTriangle({ p, q, r })
-
+  root.parity = 1
+  wp *= -1
+  wq *= -1
+  if (curvature > 0) {
+    wr *= -1
+  }
   root.push(...perps([wp, wq, wr], root))
   return root
 }
@@ -695,7 +684,6 @@ const generate = async cont => {
     }
     if (polygons.length === 0) {
       const root = getWythoffTriangle(settings)
-      root.parity = 0
       createPolygon(root, 0)
     } else {
       await asynced(() => nextLayer())
@@ -819,9 +807,9 @@ const renderRootTriangle = () => {
     wythoffColor = null
   if (settings.fillAlpha) {
     fillColor = [
-      new Color(settings.fillColorR),
       new Color(settings.fillColorP),
       new Color(settings.fillColorQ),
+      new Color(settings.fillColorR),
     ]
   }
 
@@ -834,22 +822,24 @@ const renderRootTriangle = () => {
   }
 
   const precision = 0.01
-  const rootProject = p => poincare(p).map(c => (curvature !== 0 ? -c : c))
+  const rootProject = p =>
+    poincare(p.map(c => (curvature > 0 ? -c : c))).map(c =>
+      curvature <= 0 ? -c : c
+    )
 
   const curvature = getCurvature()
   const edges = getWythoffTriangle(settings)
-
   const triangle = curvature
     ? [
+        intersect(edges[1], edges[2]),
+        intersect(edges[2], edges[0]),
         intersect(edges[0], edges[1]),
-        intersect(edges[0], edges[2]),
-        intersect(edges[2], edges[1]),
         edges[3],
-        intersect(edges[4], edges[0]),
         intersect(edges[5], edges[1]),
         intersect(edges[6], edges[2]),
+        intersect(edges[4], edges[0]),
       ]
-    : [edges[2], edges[1], edges[0], edges[3], edges[4], edges[5], edges[6]]
+    : edges
 
   interestingPoints = [
     // Snap to center
@@ -885,13 +875,12 @@ const renderRootTriangle = () => {
     }
   }
   for (let j = 0; j < 3; j++) {
-    const p = ((curvature ? 3 : 4) - j) % 3
     const w1 = 3 + 1 + j
     const w2 = 3 + 1 + ((j + 1) % 3)
     validDraws[j] = [
       !near(triangle[3], triangle[w1]),
-      !near(triangle[p], triangle[w1]),
-      !near(triangle[p], triangle[w2]),
+      !near(triangle[j], triangle[w1]),
+      !near(triangle[j], triangle[w2]),
       !near(triangle[3], triangle[w2]),
     ]
     validDraws[j].fillValid = validDraws[j].filter(x => x).length >= 3
@@ -900,14 +889,13 @@ const renderRootTriangle = () => {
 
   rootCtx.strokeStyle = settings.strokeColor
   for (let i = 0; i < 3; i++) {
-    const p = ((curvature ? 3 : 4) - i) % 3
-    rootCtx.fillStyle = fillColor && fillColor[p].getStyle()
+    rootCtx.fillStyle = fillColor && fillColor[i].getStyle()
     rootCtx.beginPath()
     if (fillColor) {
       curveChain(
         triangle[3],
         triangle[4 + i],
-        triangle[p],
+        triangle[i],
         triangle[4 + ((i + 1) % 3)],
         triangle[3]
       )
@@ -918,8 +906,6 @@ const renderRootTriangle = () => {
   }
 
   for (let i = 0; i < 3; i++) {
-    const p = ((curvature ? 3 : 4) - i) % 3
-
     if (wythoffColor) {
       rootCtx.beginPath()
       curveChain(triangle[3], triangle[4 + i])
@@ -930,7 +916,7 @@ const renderRootTriangle = () => {
     }
     if (strokeColor) {
       rootCtx.beginPath()
-      curveChain(triangle[4 + i], triangle[p], triangle[4 + ((i + 1) % 3)])
+      curveChain(triangle[4 + i], triangle[i], triangle[4 + ((i + 1) % 3)])
       rootCtx.lineWidth = Math.min(5, settings.strokeWidth)
       rootCtx.globalAlpha = settings.strokeAlpha / 100
       rootCtx.strokeStyle = strokeColor.getStyle()
@@ -1171,13 +1157,13 @@ const updateProjection = () => {
     controls.target.set(0, 0, 4)
     camera.updateProjectionMatrix()
     controls.update()
-  } else if (settings.projection === '3d inside') {
+  } else if (settings.projection === '3d stereographic') {
     camera.fov = 90
     camera.position.set(0, 0, 0.1)
     controls.target.set(0, 0, 0)
     camera.updateProjectionMatrix()
     controls.update()
-  } else if (settings.projection === '3d stereographic') {
+  } else if (settings.projection === '3d orthographic') {
     camera.fov = 90
     camera.position.set(0, 0, -2)
     controls.target.set(0, 0, 0)
@@ -1357,7 +1343,9 @@ const fromPoincare = ([x, y]) => {
 
 const checkWythoff = (newWythoff, free) => {
   const curvature = getCurvature()
-  newWythoff = normalize(newWythoff)
+  if (curvature) {
+    newWythoff = normalize(newWythoff)
+  }
   const edges = getWythoffTriangle(settings, newWythoff)
 
   if (!inTriangle(newWythoff, ...edges)) {
@@ -1367,9 +1355,9 @@ const checkWythoff = (newWythoff, free) => {
   let nearest,
     nearestSqDist = Infinity
   for (let i = 0; i < interestingPoints.length; i++) {
-    const point = interestingPoints[i]
+    const point = interestingPoints[i].map(c => (curvature > 0 ? -c : c))
     const v = vec(newWythoff, point)
-    const sqDist = dot(v, v)
+    const sqDist = dot(v, v, 1)
     if (sqDist < nearestSqDist) {
       nearestSqDist = sqDist
       nearest = point
@@ -1386,6 +1374,10 @@ const checkWythoff = (newWythoff, free) => {
     settings.wq = newWythoff[1]
     settings.wr = newWythoff[2]
   }
+  if (curvature <= 0) {
+    settings.wp *= -1
+    settings.wq *= -1
+  }
 }
 
 const wyth = e => {
@@ -1395,11 +1387,10 @@ const wyth = e => {
   const y = e.clientY - top - rootMargin
   const nr = 1 / rootRatio
   let u = [x * nr, (rootSize - y) * nr]
-  if (curvature !== 0) {
+  if (curvature <= 0) {
     u = u.map(c => -c)
   }
   checkWythoff(fromPoincare(u), e.shiftKey)
-
   regenerate()
   e.stopPropagation()
 }
