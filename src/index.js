@@ -511,9 +511,7 @@ const render3dVertices = (
     center[0] /= vertices.length
     center[1] /= vertices.length
     center[2] /= vertices.length
-    if (curvature) {
-      center = normalize(center)
-    }
+    center = normalize(center)
 
     positions[pos * 3] = center[0]
     positions[pos * 3 + 1] = center[1]
@@ -587,7 +585,6 @@ const createPolygon = (triangle, order) => {
     polygons,
     triangles,
     tokens
-    // renderVertices
   )
 
   if (!polygon) {
@@ -629,10 +626,12 @@ const getWythoffTriangle = ({ p, q, r, wp, wq, wr }) => {
   const curvature = getCurvature()
   const root = getRootTriangle({ p, q, r })
   root.parity = 1
-  wp *= -1
-  wq *= -1
-  if (curvature > 0) {
-    wr *= -1
+  if (curvature) {
+    wp *= -1
+    wq *= -1
+    if (curvature > 0) {
+      wr *= -1
+    }
   }
   root.push(...perps([wp, wq, wr], root))
   return root
@@ -824,22 +823,20 @@ const renderRootTriangle = () => {
   const precision = 0.01
   const rootProject = p =>
     poincare(p.map(c => (curvature > 0 ? -c : c))).map(c =>
-      curvature <= 0 ? -c : c
+      curvature < 0 ? -c : c
     )
 
   const curvature = getCurvature()
   const edges = getWythoffTriangle(settings)
-  const triangle = curvature
-    ? [
-        intersect(edges[1], edges[2]),
-        intersect(edges[2], edges[0]),
-        intersect(edges[0], edges[1]),
-        edges[3],
-        intersect(edges[5], edges[1]),
-        intersect(edges[6], edges[2]),
-        intersect(edges[4], edges[0]),
-      ]
-    : edges
+  const triangle = [
+    intersect(edges[1], edges[2]),
+    intersect(edges[2], edges[0]),
+    intersect(edges[0], edges[1]),
+    edges[3],
+    intersect(edges[5], edges[1]),
+    intersect(edges[6], edges[2]),
+    intersect(edges[4], edges[0]),
+  ]
 
   interestingPoints = [
     // Snap to center
@@ -1300,6 +1297,7 @@ init3d()
 window.ondeviceorientation = window.onresize = size
 window.hyperball = {
   polygons,
+  triangles,
   tokens,
   translate,
   transformations,
@@ -1332,20 +1330,14 @@ document.body.appendChild(stats.dom)
 
 const fromPoincare = ([x, y]) => {
   const curvature = getCurvature()
-  if (!curvature) {
-    return [x, y, 0]
-  } else {
-    const s = -curvature * Math.min(0.999, x * x + y * y)
-    const nr = 1 / (1 - s)
-    return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
-  }
+  const s = -curvature * Math.min(0.999, x * x + y * y)
+  const nr = 1 / (1 - s)
+  return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
 }
 
 const checkWythoff = (newWythoff, free) => {
   const curvature = getCurvature()
-  if (curvature) {
-    newWythoff = normalize(newWythoff)
-  }
+  newWythoff = normalize(newWythoff)
   const edges = getWythoffTriangle(settings, newWythoff)
 
   if (!inTriangle(newWythoff, ...edges)) {
@@ -1364,7 +1356,7 @@ const checkWythoff = (newWythoff, free) => {
     }
   }
 
-  const minSqDist = curvature ? 0.001 : 0.01
+  const minSqDist = 0.005
   if (!free && nearestSqDist < minSqDist) {
     settings.wp = nearest[0]
     settings.wq = nearest[1]
@@ -1374,7 +1366,7 @@ const checkWythoff = (newWythoff, free) => {
     settings.wq = newWythoff[1]
     settings.wr = newWythoff[2]
   }
-  if (curvature <= 0) {
+  if (curvature < 0) {
     settings.wp *= -1
     settings.wq *= -1
   }
@@ -1387,7 +1379,7 @@ const wyth = e => {
   const y = e.clientY - top - rootMargin
   const nr = 1 / rootRatio
   let u = [x * nr, (rootSize - y) * nr]
-  if (curvature <= 0) {
+  if (curvature < 0) {
     u = u.map(c => -c)
   }
   checkWythoff(fromPoincare(u), e.shiftKey)
