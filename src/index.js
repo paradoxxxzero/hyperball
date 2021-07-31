@@ -832,11 +832,11 @@ const renderRootTriangle = () => {
     intersect(edges[1], edges[2]),
     intersect(edges[2], edges[0]),
     intersect(edges[0], edges[1]),
-    edges[3],
-    intersect(edges[5], edges[1]),
-    intersect(edges[6], edges[2]),
-    intersect(edges[4], edges[0]),
+    intersect(edges[4], edges[1]),
+    intersect(edges[5], edges[2]),
+    intersect(edges[3], edges[0]),
   ]
+  const w = intersect(edges[4], edges[5])
 
   interestingPoints = [
     // Snap to center
@@ -872,13 +872,13 @@ const renderRootTriangle = () => {
     }
   }
   for (let j = 0; j < 3; j++) {
-    const w1 = 3 + 1 + j
-    const w2 = 3 + 1 + ((j + 1) % 3)
+    const w1 = 3 + j
+    const w2 = 3 + ((j + 1) % 3)
     validDraws[j] = [
-      !near(triangle[3], triangle[w1]),
+      !near(w, triangle[w1]),
       !near(triangle[j], triangle[w1]),
       !near(triangle[j], triangle[w2]),
-      !near(triangle[3], triangle[w2]),
+      !near(w, triangle[w2]),
     ]
     validDraws[j].fillValid = validDraws[j].filter(x => x).length >= 3
   }
@@ -890,11 +890,11 @@ const renderRootTriangle = () => {
     rootCtx.beginPath()
     if (fillColor) {
       curveChain(
-        triangle[3],
-        triangle[4 + i],
+        w,
+        triangle[3 + i],
         triangle[i],
-        triangle[4 + ((i + 1) % 3)],
-        triangle[3]
+        triangle[3 + ((i + 1) % 3)],
+        w
       )
 
       rootCtx.globalAlpha = settings.fillAlpha / 100
@@ -905,7 +905,7 @@ const renderRootTriangle = () => {
   for (let i = 0; i < 3; i++) {
     if (wythoffColor) {
       rootCtx.beginPath()
-      curveChain(triangle[3], triangle[4 + i])
+      curveChain(w, triangle[3 + i])
       rootCtx.lineWidth = Math.min(5, settings.strokeWythoffWidth)
       rootCtx.globalAlpha = settings.strokeWythoffAlpha / 100
       rootCtx.strokeStyle = wythoffColor.getStyle()
@@ -913,7 +913,7 @@ const renderRootTriangle = () => {
     }
     if (strokeColor) {
       rootCtx.beginPath()
-      curveChain(triangle[4 + i], triangle[i], triangle[4 + ((i + 1) % 3)])
+      curveChain(triangle[3 + i], triangle[i], triangle[3 + ((i + 1) % 3)])
       rootCtx.lineWidth = Math.min(5, settings.strokeWidth)
       rootCtx.globalAlpha = settings.strokeAlpha / 100
       rootCtx.strokeStyle = strokeColor.getStyle()

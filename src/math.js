@@ -131,21 +131,15 @@ export const reflectOn = (triangle, i, order, check, tokens) => {
   const newTriangle = [[], [], [], []]
   newTriangle[j] = reflect(triangle[j], triangle[i])
   newTriangle[k] = reflect(triangle[k], triangle[i])
-  // TODO: Needed ?
-  const wyt = triangle[3]
-  let wytj = normalize(cross(triangle[j], wyt), 1)
-  let wytk = normalize(cross(triangle[k], wyt), 1)
-  wytj = reflect(wytj, triangle[i])
-  wytk = reflect(wytk, triangle[i])
-  newTriangle[3] = intersect(wytj, wytk, false)
 
+  newTriangle[3] = reflect(triangle[3], triangle[i])
   newTriangle[4] = reflect(triangle[4], triangle[i])
   newTriangle[5] = reflect(triangle[5], triangle[i])
-  newTriangle[6] = reflect(triangle[6], triangle[i])
 
   newTriangle[i][0] = -triangle[i][0]
   newTriangle[i][1] = -triangle[i][1]
   newTriangle[i][2] = -triangle[i][2]
+
   newTriangle.parity = 1 - triangle.parity
   const token = getToken(newTriangle, tokenSize)
   if (check) {
@@ -208,10 +202,10 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
     intersect(triangle[0], triangle[2], triangle.parity)
   )
   wythoffs.push([
-    [...triangle[3].map(x => (curvature <= 0 || triangle.parity ? x : -x))],
-    intersect(triangle[1], triangle[5], triangle.parity),
-    intersect(triangle[2], triangle[6], triangle.parity),
-    intersect(triangle[0], triangle[4], triangle.parity),
+    intersect(triangle[4], triangle[3], triangle.parity),
+    intersect(triangle[1], triangle[4], triangle.parity),
+    intersect(triangle[2], triangle[5], triangle.parity),
+    intersect(triangle[0], triangle[3], triangle.parity),
   ])
   const rootEdges = [...triangle]
   rootEdges.parity = triangle.parity
@@ -228,10 +222,10 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
         : intersect(triangle[1], triangle[0], triangle.parity)
     )
     wythoffs.push([
-      [...triangle[3].map(x => (curvature <= 0 || triangle.parity ? x : -x))],
-      intersect(triangle[1], triangle[5], triangle.parity),
-      intersect(triangle[2], triangle[6], triangle.parity),
-      intersect(triangle[0], triangle[4], triangle.parity),
+      intersect(triangle[4], triangle[3], triangle.parity),
+      intersect(triangle[1], triangle[4], triangle.parity),
+      intersect(triangle[2], triangle[5], triangle.parity),
+      intersect(triangle[0], triangle[3], triangle.parity),
     ])
     const subEdges = [...triangle]
     subEdges.parity = triangle.parity
@@ -358,7 +352,7 @@ export const curve = (u, v, curveStep) => {
 }
 
 export const perps = (w, triangle) => {
-  let perps = [w]
+  let perps = []
   for (let i = 0; i < 3; i++) {
     let a = triangle[i]
     if (!curvature) {
