@@ -185,7 +185,6 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
   polygons[order] = polygons[order] || []
   triangles[order] = triangles[order] || []
   tokens[order] = tokens[order] || {}
-  const parity = triangle.parity
   const vertices = []
   const wythoffs = []
   if (order > 0) {
@@ -195,6 +194,7 @@ export const getPolygon = (triangle, p, order, polygons, triangles, tokens) => {
   } else {
     tokens[order][getToken(triangle)] = true
   }
+  const parity = triangle.parity
 
   const center = intersect(triangle[2], triangle[1], triangle.parity)
   vertices.push(
