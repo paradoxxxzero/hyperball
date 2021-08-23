@@ -34,6 +34,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Hyperbolic 472': {
@@ -69,6 +70,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Hyperbolic 443': {
@@ -104,6 +106,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 10,
+        subsampling: 1,
       },
     },
     'Hyperbolic 662': {
@@ -139,6 +142,7 @@ export default {
         straight: true,
         tokenPrecision: 2,
         curvePrecision: 16,
+        subsampling: 1,
       },
     },
     'Parabolic 442': {
@@ -174,6 +178,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Parabolic 632': {
@@ -209,6 +214,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Parabolic 333': {
@@ -244,6 +250,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Elliptic 532': {
@@ -279,6 +286,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Elliptic 432': {
@@ -314,6 +322,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     'Elliptic 323': {
@@ -349,6 +358,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     Triangles: {
@@ -384,6 +394,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     Inverted: {
@@ -419,6 +430,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 12,
+        subsampling: 1,
       },
     },
     Football: {
@@ -454,6 +466,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 10,
+        subsampling: 1,
       },
     },
     EllipticGL: {
@@ -489,6 +502,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 19,
+        subsampling: 1,
       },
     },
     HyperbolicGL: {
@@ -524,6 +538,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 14,
+        subsampling: 1,
       },
     },
     ParabolicGL: {
@@ -559,6 +574,7 @@ export default {
         straight: false,
         tokenPrecision: 2,
         curvePrecision: 14,
+        subsampling: 1,
       },
     },
   },

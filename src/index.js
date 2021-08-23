@@ -210,20 +210,28 @@ const updateRadius = () => {
 }
 
 const size = () => {
-  width = window.innerWidth
-  height = window.innerHeight
-
+  width = window.innerWidth * settings.subsampling
+  height = window.innerHeight * settings.subsampling
+  const currentCanvas = backend === '3d' ? renderer.domElement : canvas
+  if (currentCanvas.width !== width || currentCanvas.height !== height) {
   if (backend === '3d') {
     camera.aspect = width / height
     camera.zoom = Math.min(1, width / height)
     camera.updateProjectionMatrix()
     renderer.setSize(width, height)
   } else {
-    if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
       canvas.height = height
     }
+    if (settings.subsampling !== 1) {
+      currentCanvas.style.width = null
+      currentCanvas.style.height = null
+    } else if (backend !== '3d') {
+      currentCanvas.style.width = width + 'px'
+      currentCanvas.style.height = height + 'px'
   }
+  }
+
   updateRadius()
   render()
 }
@@ -1203,7 +1211,7 @@ strokeGui
   .add(settings, 'strokeColorShift', -359, 359, 1)
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(styleChange)
-strokeGui.add(settings, 'strokeWidth', 0.1, 30, 0.1).onChange(styleChange)
+strokeGui.add(settings, 'strokeWidth', 0.1, 100, 0.1).onChange(styleChange)
 strokeGui.add(settings, 'strokeScaled').onChange(styleChange)
 strokeGui.addColor(settings, 'backgroundColor').onChange(styleChange)
 strokeGui
@@ -1215,7 +1223,7 @@ strokeGui
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeWythoffAlpha', 0, 100, 1).onChange(styleChange)
 strokeGui
-  .add(settings, 'strokeWythoffWidth', 0.1, 30, 0.1)
+  .add(settings, 'strokeWythoffWidth', 0.1, 100, 0.1)
   .onChange(styleChange)
 
 gui.addColor(settings, 'backgroundColor').onChange(render)
@@ -1237,6 +1245,7 @@ gui.add(
   },
   'recenter'
 )
+gui.add(settings, 'subsampling', 0.01, 10, 0.01).onChange(() => size())
 
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 if (window.innerWidth < 600) {
