@@ -1146,14 +1146,14 @@ const updateProjection = () => {
   }
   if (settings.projection === '3d poincare') {
     camera.fov = 90
-    camera.position.set(0, 0, curvature || -1)
+    camera.position.set(0, 0, (curvature || -1) * 0.99)
     controls.target.set(0, 0, 0)
     camera.updateProjectionMatrix()
     controls.update()
   } else if (settings.projection === '3d klein') {
     camera.fov = 90
     camera.position.set(0, 0, 0)
-    controls.target.set(0, 0, -curvature || 1)
+    controls.target.set(0, 0, (-curvature || 1) * 0.99)
     camera.updateProjectionMatrix()
     controls.update()
   } else if (settings.projection === '3d inverted') {
