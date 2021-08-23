@@ -255,7 +255,7 @@ export default {
     },
     'Elliptic 532': {
       0: {
-        projection: 'stereographic',
+        projection: 'poincare',
         p: 5,
         q: 3,
         r: 2,
@@ -327,7 +327,7 @@ export default {
     },
     'Elliptic 323': {
       0: {
-        projection: 'stereographic',
+        projection: 'poincare',
         p: 3,
         q: 2,
         r: 3,
@@ -471,7 +471,7 @@ export default {
     },
     EllipticGL: {
       0: {
-        projection: '3d stereographic',
+        projection: '3d poincare',
         p: 5,
         q: 3,
         r: 2,
@@ -543,7 +543,7 @@ export default {
     },
     ParabolicGL: {
       0: {
-        projection: '3d orthographic',
+        projection: '3d poincare',
         p: 6,
         q: 3,
         r: 2,
