@@ -55,6 +55,7 @@ let radius,
   height,
   w2,
   h2,
+  s2,
   polygons = [],
   triangles = [],
   transformations = [],
@@ -191,18 +192,22 @@ const init3d = () => {
 const updateRadius = () => {
   w2 = width / 2
   h2 = height / 2
-  const s2 = Math.min(w2, h2)
+  s2 = Math.min(w2, h2)
   radius =
     {
       poincare: 0.9 * s2,
       klein: 0.9 * s2,
       inverted: 0.4 * s2,
+      lambert: 0.5 * s2,
+      spiral: 0.9 * s2,
+      latlng: 0.4 * w2,
+      mercator: 0.4 * w2,
+      // test: 0.9 * s2,
       band: 0.102 * h2,
       half: 0.102 * h2,
-      stereographic: 0.9 * s2,
-      orthographic: 0.3 * s2,
+      orthographic: 0.5 * s2,
       joukowsky: 0.8 * w2,
-    }[settings.projection] || s2
+    }[settings.projection] || 0.5 * s2
 
   if (settings.projection === 'half') {
     h2 = height
@@ -210,20 +215,28 @@ const updateRadius = () => {
 }
 
 const size = () => {
-  width = window.innerWidth
-  height = window.innerHeight
-
-  if (backend === '3d') {
-    camera.aspect = width / height
-    camera.zoom = Math.min(1, width / height)
-    camera.updateProjectionMatrix()
-    renderer.setSize(width, height)
-  } else {
-    if (canvas.width !== width || canvas.height !== height) {
+  width = window.innerWidth * settings.subsampling
+  height = window.innerHeight * settings.subsampling
+  const currentCanvas = backend === '3d' ? renderer.domElement : canvas
+  if (currentCanvas.width !== width || currentCanvas.height !== height) {
+    if (backend === '3d') {
+      camera.aspect = width / height
+      camera.zoom = Math.min(1, width / height)
+      camera.updateProjectionMatrix()
+      renderer.setSize(width, height)
+    } else {
       canvas.width = width
       canvas.height = height
     }
+    if (settings.subsampling !== 1) {
+      currentCanvas.style.width = null
+      currentCanvas.style.height = null
+    } else if (backend !== '3d') {
+      currentCanvas.style.width = width + 'px'
+      currentCanvas.style.height = height + 'px'
+    }
   }
+
   updateRadius()
   render()
 }
@@ -236,14 +249,13 @@ const showStats = { showStats: false }
 
 const toDisk = ([x, y]) => [w2 + x * radius, h2 - y * radius]
 
-const views = [
-  '3d poincare',
-  '3d klein',
-  '3d inverted',
-  '3d stereographic',
-  '3d orthographic',
-]
-const project = p => projections[settings.projection](p)
+const views = ['3d poincare', '3d klein', '3d inverted']
+const project = (p, c) => {
+  const projected = projections[settings.projection](p, c)
+  if (projected) {
+    return toDisk(projected)
+  }
+}
 const black = new Color('black')
 const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
   if (vertices.length < 2) {
@@ -412,12 +424,18 @@ const renderVertices = (
   const straight = settings.straight
   for (let i = 0, m = vertices.length; i < m; i++) {
     const u = vertices[i]
-    const pu = toDisk(project(u))
+    const uProjected = project(u, curvature)
     const v = vertices[(i + 1) % m]
-    const pv = toDisk(project(v))
-    verts.push([pu[0], pu[1], u])
+    uProjected && verts.push([uProjected[0], uProjected[1], u])
+    const vProjected = project(v, curvature)
     if (!straight) {
-      const realDist = Math.sqrt((pu[0] - pv[0]) ** 2 + (pu[1] - pv[1]) ** 2)
+      const realDist =
+        uProjected && vProjected
+          ? Math.sqrt(
+              (uProjected[0] - vProjected[0]) ** 2 +
+                (uProjected[1] - vProjected[1]) ** 2
+            )
+          : 1000
       const curvedVertices = curve(
         u,
         v,
@@ -425,18 +443,12 @@ const renderVertices = (
       )
 
       for (let j = 1, n = curvedVertices.length; j < n; j++) {
-        const vt = curvedVertices[j]
-        const p = toDisk(project(vt))
-        verts.push([p[0], p[1], vt])
-        if (
-          settings.projection === 'orthographic' &&
-          (p[0] > width || p[0] < 0 || p[1] > height || p[1] < 0)
-        ) {
-          break
-        }
+        const uv = curvedVertices[j]
+        const uvProjected = project(uv, curvature)
+        uvProjected && verts.push([uvProjected[0], uvProjected[1], uv])
       }
     }
-    verts.push([pv[0], pv[1], v])
+    vProjected && verts.push([vProjected[0], vProjected[1], v])
   }
 
   if (fillColor) {
@@ -455,7 +467,7 @@ const renderVertices = (
       for (let i = 1, n = verts.length; i < n; i++) {
         ctx.lineWidth =
           (2 * strokeWidth) / (dist(verts[i - 1][2]) + dist(verts[i][2]))
-        if (ctx.lineWidth < 0.01) {
+        if (ctx.lineWidth < 0.01 / settings.subsampling) {
           break
         }
         ctx.beginPath()
@@ -482,7 +494,6 @@ const render3dVertices = (
   wedgesStrokeColor,
   validDraws
 ) => {
-  const curvature = getCurvature()
   const positions = faces.geometry.attributes.position.array
   const colors = faces.geometry.attributes.color.array
   const linePositions = wireframe.geometry.attributes.position.array
@@ -821,12 +832,10 @@ const renderRootTriangle = () => {
   }
 
   const precision = 0.01
-  const rootProject = p =>
-    poincare(p.map(c => (curvature > 0 ? -c : c))).map(c =>
-      curvature < 0 ? -c : c
-    )
-
   const curvature = getCurvature()
+  const rootProject = p =>
+    (poincare(p, curvature) || []).map(c => (curvature !== 0 ? -c : c))
+
   const edges = getWythoffTriangle(settings)
   const triangle = [
     intersect(edges[1], edges[2]),
@@ -965,11 +974,9 @@ const render = () => {
       }
     }
     pol.sort(
-      ['stereographic', 'orthographic', 'inverted'].includes(
-        settings.projection
-      )
-        ? (a, b) => b.center[2] - a.center[2]
-        : (a, b) => a.center[2] - b.center[2]
+      ['joukowsky', 'inverted'].includes(settings.projection)
+        ? (a, b) => a.center[2] - b.center[2]
+        : (a, b) => b.center[2] - a.center[2]
     )
     for (let j = 0, n = pol.length; j < n; j++) {
       renderPolygon(pol[j])
@@ -1126,6 +1133,7 @@ const styleChange = () => {
 }
 const updateProjection = () => {
   let regen = false
+  const curvature = getCurvature()
   if (backend !== '3d' && views.includes(settings.projection)) {
     backend = '3d'
     canvas.style.display = 'none'
@@ -1138,32 +1146,20 @@ const updateProjection = () => {
   }
   if (settings.projection === '3d poincare') {
     camera.fov = 90
-    camera.position.set(0, 0, -1)
-    controls.target.set(0, 0, 1)
+    camera.position.set(0, 0, (curvature || -1) * 0.99)
+    controls.target.set(0, 0, 0)
     camera.updateProjectionMatrix()
     controls.update()
   } else if (settings.projection === '3d klein') {
     camera.fov = 90
     camera.position.set(0, 0, 0)
-    controls.target.set(0, 0, 1)
+    controls.target.set(0, 0, (-curvature || 1) * 0.99)
     camera.updateProjectionMatrix()
     controls.update()
   } else if (settings.projection === '3d inverted') {
     camera.fov = 130
     camera.position.set(0, 0, 2)
     controls.target.set(0, 0, 4)
-    camera.updateProjectionMatrix()
-    controls.update()
-  } else if (settings.projection === '3d stereographic') {
-    camera.fov = 90
-    camera.position.set(0, 0, 0.1)
-    controls.target.set(0, 0, 0)
-    camera.updateProjectionMatrix()
-    controls.update()
-  } else if (settings.projection === '3d orthographic') {
-    camera.fov = 90
-    camera.position.set(0, 0, -2)
-    controls.target.set(0, 0, 0)
     camera.updateProjectionMatrix()
     controls.update()
   }
@@ -1203,7 +1199,7 @@ strokeGui
   .add(settings, 'strokeColorShift', -359, 359, 1)
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(styleChange)
-strokeGui.add(settings, 'strokeWidth', 0.1, 30, 0.1).onChange(styleChange)
+strokeGui.add(settings, 'strokeWidth', 0.1, 100, 0.1).onChange(styleChange)
 strokeGui.add(settings, 'strokeScaled').onChange(styleChange)
 strokeGui.addColor(settings, 'backgroundColor').onChange(styleChange)
 strokeGui
@@ -1215,7 +1211,7 @@ strokeGui
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeWythoffAlpha', 0, 100, 1).onChange(styleChange)
 strokeGui
-  .add(settings, 'strokeWythoffWidth', 0.1, 30, 0.1)
+  .add(settings, 'strokeWythoffWidth', 0.1, 100, 0.1)
   .onChange(styleChange)
 
 gui.addColor(settings, 'backgroundColor').onChange(render)
@@ -1237,6 +1233,7 @@ gui.add(
   },
   'recenter'
 )
+gui.add(settings, 'subsampling', 0.01, 10, 0.01).onChange(() => size())
 
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 if (window.innerWidth < 600) {
@@ -1330,6 +1327,9 @@ document.body.appendChild(stats.dom)
 
 const fromPoincare = ([x, y]) => {
   const curvature = getCurvature()
+  if (!curvature) {
+    return [x, y, 1]
+  }
   const s = -curvature * Math.min(0.999, x * x + y * y)
   const nr = 1 / (1 - s)
   return [2 * x * nr, 2 * y * nr, (1 + s) * nr]
