@@ -343,7 +343,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     return
   }
 
-  if (!settings.wedgeShade && validDraws.fills === 1) {
+  if (!settings.wedgeShade && validDraws.fills === 1 && settings.r === 2) {
     let verts = []
     for (let i = 0; i < ~~(vertices.length / 2); i++) {
       verts.push(vertices[1 + ((i * 2) % vertices.length)])
@@ -648,6 +648,11 @@ const getWythoffTriangle = ({ p, q, r, wp, wq, wr }) => {
   return root
 }
 
+const info = s => {
+  const sep = ' || '
+  document.title = document.title.split(sep, 1).slice(-1) + (s ? sep + s : '')
+}
+
 const generate = async cont => {
   if (generating) {
     return
@@ -683,15 +688,17 @@ const generate = async cont => {
       }
     }
   }
+  let polylen
 
   while (
     polygons.length < settings.layers &&
-    polygons.reduce((a, p) => a + p.length, 0) < settings.limit &&
+    (polylen = polygons.reduce((a, p) => a + p.length, 0)) < settings.limit &&
     (polygons.length === 0 || polygons[polygons.length - 1].length)
   ) {
     if (stop) {
       break
     }
+    info(`${polygons.length}/${settings.layers} - ${polylen}/${settings.limit}`)
     if (polygons.length === 0) {
       const root = getWythoffTriangle(settings)
       createPolygon(root, 0)
@@ -723,6 +730,7 @@ const generate = async cont => {
       renderer.render(scene, camera)
     }
   }
+  info()
   if (polygons.reduce((a, p) => a + p.length, 0) === settings.limit) {
     triangles.pop()
     tokens.pop()
@@ -1199,7 +1207,7 @@ strokeGui
   .add(settings, 'strokeColorShift', -359, 359, 1)
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeAlpha', 0, 100, 1).onChange(styleChange)
-strokeGui.add(settings, 'strokeWidth', 0.1, 100, 0.1).onChange(styleChange)
+strokeGui.add(settings, 'strokeWidth', 0.1, 250, 0.1).onChange(styleChange)
 strokeGui.add(settings, 'strokeScaled').onChange(styleChange)
 strokeGui.addColor(settings, 'backgroundColor').onChange(styleChange)
 strokeGui
@@ -1211,7 +1219,7 @@ strokeGui
   .onChange(() => regenerate())
 strokeGui.add(settings, 'strokeWythoffAlpha', 0, 100, 1).onChange(styleChange)
 strokeGui
-  .add(settings, 'strokeWythoffWidth', 0.1, 100, 0.1)
+  .add(settings, 'strokeWythoffWidth', 0.1, 250, 0.1)
   .onChange(styleChange)
 
 gui.addColor(settings, 'backgroundColor').onChange(render)
