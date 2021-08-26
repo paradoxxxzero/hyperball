@@ -343,7 +343,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
     return
   }
 
-  if (!settings.wedgeShade && validDraws.fills === 1) {
+  if (!settings.wedgeShade && validDraws.fills === 1 && settings.r === 2) {
     let verts = []
     for (let i = 0; i < ~~(vertices.length / 2); i++) {
       verts.push(vertices[1 + ((i * 2) % vertices.length)])
