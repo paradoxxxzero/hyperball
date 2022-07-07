@@ -332,23 +332,54 @@ const transformations = {
 export const transformVertex = (type, vertex, parameter) =>
   transformations[type](vertex, parameter)
 
-const t2s = (t, uv) => Math.sqrt(t * t * (uv * uv - 1) + 1) - curvature * uv * t
-
-export const curve = (u, v, curveStep) => {
+export const slerp = (u, v, step) => {
+  const o = Math.acos(dot(u, v))
+  const n = Math.sin(o)
+  if (n === 0) {
+    return [u, v]
+  }
   const vertices = [u]
-  if (curvature) {
-    const uv = dot(u, v)
-    for (let t = 1 - curveStep; t > 0; t -= curveStep) {
-      const s = t2s(t, uv)
-      vertices.push([
-        u[0] * t + v[0] * s,
-        u[1] * t + v[1] * s,
-        u[2] * t + v[2] * s,
-      ])
-    }
+  for (let i = step; i < 1; i += step) {
+    const a = Math.sin((1 - i) * o) / n
+    const b = Math.sin(i * o) / n
+    vertices.push([
+      u[0] * a + v[0] * b,
+      u[1] * a + v[1] * b,
+      u[2] * a + v[2] * b,
+    ])
   }
   vertices.push(v)
   return vertices
+}
+
+export const hlerp = (u, v, step) => {
+  const o = Math.acosh(-dot(u, v))
+  const n = Math.sinh(o)
+  if (n === 0) {
+    return [u, v]
+  }
+  const vertices = [u]
+  for (let i = step; i < 1; i += step) {
+    const a = Math.sinh((1 - i) * o) / n
+    const b = Math.sinh(i * o) / n
+    vertices.push([
+      u[0] * a + v[0] * b,
+      u[1] * a + v[1] * b,
+      u[2] * a + v[2] * b,
+    ])
+  }
+  vertices.push(v)
+  return vertices
+}
+
+export const curve = (u, v, curveStep, c = curvature) => {
+  if (c > 0) {
+    return slerp(u, v, curveStep)
+  } else if (c < 0) {
+    return hlerp(u, v, curveStep)
+  } else {
+    return [u, v]
+  }
 }
 
 export const perps = (w, triangle) => {

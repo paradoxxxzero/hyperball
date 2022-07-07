@@ -7,7 +7,7 @@ import {
   BufferGeometry,
   Color,
   DoubleSide,
-  DynamicDrawUsage,
+  StreamDrawUsage,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -140,34 +140,34 @@ const init3d = () => {
   const geometry = new BufferGeometry()
   geometry.setAttribute(
     'position',
-    new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(positions, 3).setUsage(StreamDrawUsage)
   )
   geometry.setAttribute(
     'color',
-    new BufferAttribute(colors, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(colors, 3).setUsage(StreamDrawUsage)
   )
 
   const lineGeometry = new BufferGeometry()
   const linePositions = new Float32Array(3 * MAX)
   lineGeometry.setAttribute(
     'position',
-    new BufferAttribute(linePositions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(linePositions, 3).setUsage(StreamDrawUsage)
   )
   const lineColors = new Float32Array(3 * MAX)
   lineGeometry.setAttribute(
     'color',
-    new BufferAttribute(lineColors, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineColors, 3).setUsage(StreamDrawUsage)
   )
   const lineWythoffGeometry = new BufferGeometry()
   const lineWythoffPositions = new Float32Array(3 * MAX)
   lineWythoffGeometry.setAttribute(
     'position',
-    new BufferAttribute(lineWythoffPositions, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffPositions, 3).setUsage(StreamDrawUsage)
   )
   const lineWythoffColors = new Float32Array(3 * MAX)
   lineWythoffGeometry.setAttribute(
     'color',
-    new BufferAttribute(lineWythoffColors, 3).setUsage(DynamicDrawUsage)
+    new BufferAttribute(lineWythoffColors, 3).setUsage(StreamDrawUsage)
   )
   const material = new MeshBasicMaterial({
     vertexColors: true,
