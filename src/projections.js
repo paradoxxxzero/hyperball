@@ -1,3 +1,4 @@
+import { ellipticFi } from '../elliptic'
 export const poincare = ([x, y, z], c) => {
   // z = -c
   if (c <= 0 || z < 1) {
@@ -195,6 +196,100 @@ export const teardrop = ([x, y, z], c) => {
   ]
 }
 
+export const squareStretch = ([x, y, z], c) => {
+  const p = rootCircle([x, y, z], c)
+  if (!p) {
+    return
+  }
+  const [X, Y] = p
+  const X2 = X * X
+  const Y2 = Y * Y
+  const d = Math.sqrt(X2 + Y2)
+
+  return [
+    X2 >= Y2 ? Math.sign(X) * d : ((Math.sign(Y) * X) / Y) * d,
+    X2 >= Y2 ? ((Math.sign(X) * Y) / X) * d : Math.sign(Y) * d,
+  ]
+}
+
+export const squircular = ([x, y, z], c) => {
+  const p = rootCircle([x, y, z], c)
+  if (!p) {
+    return
+  }
+  const [X, Y] = p
+  const X2 = X * X
+  const Y2 = Y * Y
+  const k = Math.sign(X * Y) / Math.SQRT2
+  const h = Math.sqrt(X2 + Y2 - Math.sqrt((X2 + Y2) * (X2 + Y2 - 4 * X2 * Y2)))
+
+  return [(k / Y) * h, (k / X) * h]
+}
+
+export const squareElliptical = ([x, y, z], c) => {
+  const p = rootCircle([x, y, z], c)
+  if (!p) {
+    return
+  }
+  const [X, Y] = p
+  const X2 = X * X
+  const Y2 = Y * Y
+
+  return [
+    0.5 *
+      (Math.sqrt(2 + X2 - Y2 + 2 * Math.SQRT2 * X) -
+        Math.sqrt(2 + X2 - Y2 - 2 * Math.SQRT2 * X)),
+    0.5 *
+      (Math.sqrt(2 - X2 + Y2 + 2 * Math.SQRT2 * Y) -
+        Math.sqrt(2 - X2 + Y2 - 2 * Math.SQRT2 * Y)),
+  ]
+}
+
+export const square = ([x, y, z], c) => {
+  // Re((1 - i) / -Ke * F(acos((1 + i) / sqrt(2) * (x + iy)), 1 / sqrt(2))) + 1
+  // Im((1 - i) / -Ke * F(acos((1 + i) / sqrt(2) * (x + iy)), 1 / sqrt(2))) - 1
+  const p = rootCircle([x, y, z], c)
+  if (!p) {
+    return
+  }
+  const [X, Y] = p
+  const Ke = 1.854
+  const iKe = -1 / Ke
+
+  // (1 + i) / sqrt(2) * (x + iy)
+  const ax = (X - Y) / Math.SQRT2
+  const ay = (X + Y) / Math.SQRT2
+
+  // acos(x + iy) = -i * ln(x + iy + sqrt((x + iy) * (x + iy) - 1))
+
+  const sqfx = ax * ax - ay * ay - 1
+  const sqfy = 2 * ax * ay
+
+  // sqrt(x + iy) = sqrt((sqrt(x² + y²) + x) / 2) + i * sign(y) * sqrt((sqrt(x² + y²) - x) / 2)
+
+  const sqx = Math.sqrt((Math.sqrt(sqfx * sqfx + sqfy * sqfy) + sqfx) / 2)
+  const sqy =
+    Math.sign(sqfy) *
+    Math.sqrt((Math.sqrt(sqfx * sqfx + sqfy * sqfy) - sqfx) / 2)
+
+  const lax = ax + sqx
+  const lay = ay + sqy
+
+  // ln(x + iy) = ln(sqrt(x² + y²)) - i * atan2(y, x)
+
+  const acx = -Math.atan2(lay, lax)
+  const acy = -Math.log(Math.sqrt(lax * lax + lay * lay))
+
+  const [ex, ey] = ellipticFi(acx, acy, 1 / 2)
+
+  const [Rx, Ry] = [iKe * (ex + ey), iKe * (ey - ex)]
+
+  // WHY?
+  const [rx, ry] = Rx < Ry ? [-Rx, -Ry] : [Rx, Ry]
+  const [crx, cry] = [rx - 1, ry + 1]
+
+  return Rx < -Ry ? [crx, cry] : [cry, crx]
+}
 export const projections = {
   poincare,
   klein,
@@ -212,5 +307,6 @@ export const projections = {
   joukowsky,
   latlng,
   mercator,
+  square,
   // test,
 }

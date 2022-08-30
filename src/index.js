@@ -197,6 +197,7 @@ const updateRadius = () => {
   radius =
     {
       poincare: 0.9 * s2,
+      square: 0.9 * s2,
       klein: 0.9 * s2,
       inverted: 0.4 * s2,
       lambert: 0.5 * s2,
