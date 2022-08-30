@@ -583,7 +583,7 @@ export default {
         strokeColor: '#dd00ff',
         strokeColorShift: 7,
         strokeAlpha: 100,
-        strokeWidth: 3,
+        strokeWidth: 5,
         strokeScaled: true,
         strokeWythoff: 'plain',
         strokeWythoffColor: '#ffffff',
