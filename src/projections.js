@@ -245,6 +245,7 @@ export const squareElliptical = ([x, y, z], c) => {
   ]
 }
 
+// https://arxiv.org/pdf/1509.06344.pdf
 export const square = ([x, y, z], c) => {
   // Re((1 - i) / -Ke * F(acos((1 + i) / sqrt(2) * (x + iy)), 1 / sqrt(2))) + 1
   // Im((1 - i) / -Ke * F(acos((1 + i) / sqrt(2) * (x + iy)), 1 / sqrt(2))) - 1
