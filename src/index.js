@@ -1298,6 +1298,10 @@ exportGui.add(
   'export'
 )
 
+gui
+  .add(settings, 'showRoot')
+  .onChange(v => (rootCanvas.style.display = v ? 'block' : 'none'))
+
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 if (window.innerWidth < 600) {
   gui.close()

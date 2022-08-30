@@ -38,6 +38,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Hyperbolic 472': {
@@ -77,6 +78,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Hyperbolic 443': {
@@ -116,6 +118,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Hyperbolic 662': {
@@ -155,6 +158,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Parabolic 442': {
@@ -194,6 +198,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Parabolic 632': {
@@ -233,6 +238,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Parabolic 333': {
@@ -272,6 +278,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Elliptic 532': {
@@ -311,6 +318,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Elliptic 432': {
@@ -350,6 +358,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     'Elliptic 323': {
@@ -389,6 +398,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     Triangles: {
@@ -428,6 +438,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: false,
       },
     },
     Inverted: {
@@ -467,6 +478,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: false,
       },
     },
     Ring: {
@@ -506,6 +518,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     Square: {
@@ -545,6 +558,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     Heart: {
@@ -584,6 +598,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     Teardrop: {
@@ -623,6 +638,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     Football: {
@@ -641,7 +657,7 @@ export default {
         fillColorQ: '#f7f7f7',
         fillColorR: '#f7f7f7',
         fillColorShift: 37,
-        fillAlpha: 100,
+        fillAlpha: 0,
         wedgeShade: 0,
         stroke: 'plain',
         strokeColor: '#000000',
@@ -662,6 +678,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: false,
       },
     },
     EllipticGL: {
@@ -701,6 +718,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     HyperbolicGL: {
@@ -740,6 +758,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
     ParabolicGL: {
@@ -779,6 +798,7 @@ export default {
         forceSize: false,
         width: 800,
         height: 600,
+        showRoot: true,
       },
     },
   },
