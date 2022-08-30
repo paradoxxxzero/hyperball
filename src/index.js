@@ -80,7 +80,8 @@ let radius,
   rootRatio,
   rootMargin = 10,
   interestingPoints = [],
-  validDraws = []
+  validDraws = [],
+  afterGenerate
 
 const getPreset = () =>
   decodeURIComponent(location.hash.replace(/^#/, '')) || presets.preset
@@ -219,8 +220,16 @@ const updateRadius = () => {
 }
 
 const size = () => {
-  width = window.innerWidth * settings.subsampling
-  height = window.innerHeight * settings.subsampling
+  width =
+    (settings.forceSize ? settings.width : window.innerWidth) *
+    settings.subsampling
+  height =
+    (settings.forceSize ? settings.height : window.innerHeight) *
+    settings.subsampling
+  if (!settings.forceSize) {
+    settings.width = width
+    settings.height = height
+  }
   const currentCanvas = backend === '3d' ? renderer.domElement : canvas
   if (currentCanvas.width !== width || currentCanvas.height !== height) {
     if (backend === '3d') {
@@ -658,6 +667,14 @@ const info = s => {
 }
 
 const generate = async cont => {
+  await generateAsync(cont)
+  if (afterGenerate) {
+    afterGenerate()
+    afterGenerate = null
+  }
+}
+
+const generateAsync = async cont => {
   if (generating) {
     return
   }
@@ -1245,7 +1262,40 @@ gui.add(
   },
   'recenter'
 )
-gui.add(settings, 'subsampling', 0.01, 10, 0.01).onChange(() => size())
+
+const exportGui = gui.addFolder('Export')
+
+exportGui.add(settings, 'subsampling', 0.01, 10, 0.01).onChange(() => size())
+exportGui.add(settings, 'forceSize').onChange(() => size())
+exportGui
+  .add(settings, 'width', 0, 25000, 1)
+  .onChange(() => size())
+  .listen()
+exportGui
+  .add(settings, 'height', 0, 25000, 1)
+  .onChange(() => size())
+  .listen()
+
+const download = () => {
+  const currentCanvas = backend === '3d' ? renderer.domElement : canvas
+  const link = document.createElement('a')
+  link.download = `Hyperball (${settings.p}, ${settings.q}, ${settings.r}) - ${settings.projection}.png`
+  link.href = currentCanvas.toDataURL()
+  link.click()
+}
+
+exportGui.add(
+  {
+    export: () => {
+      if (!generating) {
+        download()
+      } else {
+        afterGenerate = download
+      }
+    },
+  },
+  'export'
+)
 
 gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 if (window.innerWidth < 600) {
