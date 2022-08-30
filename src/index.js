@@ -203,8 +203,12 @@ const updateRadius = () => {
       latlng: 0.4 * w2,
       mercator: 0.4 * w2,
       // test: 0.9 * s2,
-      band: 0.102 * h2,
       half: 0.102 * h2,
+      heart: 0.35 * s2,
+      teardrop: 1.2 * s2,
+      band: 0.998 * h2,
+      ring: 0.998 * s2,
+      bandring: 0.998 * h2,
       orthographic: 0.5 * s2,
       joukowsky: 0.8 * w2,
     }[settings.projection] || 0.5 * s2
