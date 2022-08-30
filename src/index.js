@@ -224,12 +224,14 @@ const size = () => {
   if (!settings.forceSize) {
     settings.subsampling = window.devicePixelRatio
   }
-  width =
+  width = Math.floor(
     (settings.forceSize ? settings.width : window.innerWidth) *
-    settings.subsampling
-  height =
+      settings.subsampling
+  )
+  height = Math.floor(
     (settings.forceSize ? settings.height : window.innerHeight) *
-    settings.subsampling
+      settings.subsampling
+  )
   if (!settings.forceSize) {
     settings.width = width
     settings.height = height
@@ -245,13 +247,13 @@ const size = () => {
       canvas.width = width
       canvas.height = height
     }
-    if (settings.subsampling !== 1) {
-      currentCanvas.style.width = null
-      currentCanvas.style.height = null
-    } else if (backend !== '3d') {
-      currentCanvas.style.width = width + 'px'
-      currentCanvas.style.height = height + 'px'
-    }
+    // if (settings.subsampling !== 1) {
+    //   currentCanvas.style.width = null
+    //   currentCanvas.style.height = null
+    // } else if (backend !== '3d') {
+    //   currentCanvas.style.width = width + 'px'
+    //   currentCanvas.style.height = height + 'px'
+    // }
   }
 
   updateRadius()
