@@ -221,6 +221,9 @@ const updateRadius = () => {
 }
 
 const size = () => {
+  if (!settings.forceSize) {
+    settings.subsampling = window.devicePixelRatio
+  }
   width =
     (settings.forceSize ? settings.width : window.innerWidth) *
     settings.subsampling
@@ -368,7 +371,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
       fillColor && fillColor[j].getStyle(),
       strokeColor && strokeColor.getStyle(),
       settings.strokeAlpha,
-      settings.strokeWidth
+      settings.strokeWidth * settings.subsampling
     )
     return
   }
@@ -420,7 +423,7 @@ const renderPolygon = ({ vertices, center, wythoffs, order, parity }) => {
         null,
         strokeColor && strokeColor.getStyle(),
         settings.strokeAlpha,
-        settings.strokeWidth
+        settings.strokeWidth * settings.subsampling
       )
     }
   }
@@ -817,7 +820,7 @@ const clear = () => {
     if (settings.stroke !== 'colored') {
       ctx.strokeStyle = settings.strokeColor
     }
-    ctx.lineWidth = settings.strokeWidth
+    ctx.lineWidth = settings.strokeWidth * settings.subsampling
   }
   if (backend === '3d') {
     scene.background = new Color(settings.backgroundColor)
@@ -827,7 +830,7 @@ const clear = () => {
 
     wireframe.material.transparent = settings.strokeAlpha !== 100
     wireframe.material.opacity = settings.strokeAlpha / 100
-    wireframe.material.linewidth = settings.strokeWidth
+    wireframe.material.linewidth = settings.strokeWidth * settings.subsampling
     wireframe.visible = !!settings.strokeAlpha
 
     wythoffframe.material.transparent = settings.strokeWythoffAlpha !== 100
@@ -1211,6 +1214,7 @@ gui.add(settings, 'wq', -2, 2, 0.001).listen().onChange(pqrChange)
 gui.add(settings, 'wr', -2, 2, 0.001).listen().onChange(pqrChange)
 gui.add(settings, 'layers', 1, 100, 1).onChange(debounce(continueGenerate, 150))
 gui.add(settings, 'limit', 1).onChange(debounce(continueGenerate, 150))
+gui.addColor(settings, 'backgroundColor').onChange(render)
 const fillGui = gui.addFolder('Fill Style')
 fillGui.add(settings, 'fill', FILL_COLOR_TYPES).onChange(styleChange)
 fillGui.addColor(settings, 'fillColorP').onChange(styleChange)
@@ -1244,15 +1248,16 @@ strokeGui
   .add(settings, 'strokeWythoffWidth', 0.1, 250, 0.1)
   .onChange(styleChange)
 
-gui.addColor(settings, 'backgroundColor').onChange(render)
-gui.add(settings, 'straight').onChange(() => regenerate())
+const miscGui = gui.addFolder('Misc')
 
-gui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(v => {
+miscGui.add(settings, 'straight').onChange(() => regenerate())
+
+miscGui.add(settings, 'tokenPrecision', 0, 16, 1).onChange(v => {
   setTokenPrecision(v)
   regenerate()
 })
-gui.add(settings, 'curvePrecision', 0, 20, 1).onChange(() => regenerate())
-gui.add(
+miscGui.add(settings, 'curvePrecision', 0, 20, 1).onChange(() => regenerate())
+miscGui.add(
   {
     recenter: () => {
       stop = true
@@ -1264,10 +1269,19 @@ gui.add(
   'recenter'
 )
 
+miscGui
+  .add(settings, 'showRoot')
+  .onChange(v => (rootCanvas.style.display = v ? 'block' : 'none'))
+
+miscGui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
+
 const exportGui = gui.addFolder('Export')
 
-exportGui.add(settings, 'subsampling', 0.01, 10, 0.01).onChange(() => size())
 exportGui.add(settings, 'forceSize').onChange(() => size())
+exportGui
+  .add(settings, 'subsampling', 0.01, 10, 0.01)
+  .onChange(() => size())
+  .listen()
 exportGui
   .add(settings, 'width', 0, 25000, 1)
   .onChange(() => size())
@@ -1298,11 +1312,6 @@ exportGui.add(
   'export'
 )
 
-gui
-  .add(settings, 'showRoot')
-  .onChange(v => (rootCanvas.style.display = v ? 'block' : 'none'))
-
-gui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 if (window.innerWidth < 600) {
   gui.close()
 }
