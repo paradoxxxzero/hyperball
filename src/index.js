@@ -1279,7 +1279,19 @@ miscGui.add(showStats, 'showStats').onChange(v => stats.showPanel(v ? 0 : null))
 
 const exportGui = gui.addFolder('Export')
 
-exportGui.add(settings, 'forceSize').onChange(() => size())
+const listeners = []
+exportGui.add(settings, 'forceSize').onChange(v => {
+  // And now for a nice hack:
+  // Allow listen and direct input when forceSize is true.
+  if (v) {
+    listeners.push(...exportGui.__listening.splice(0, Infinity))
+    exportGui.__listening.push({ updateDisplay() {} })
+  } else if (listeners.length) {
+    exportGui.__listening.splice(0, Infinity)
+    exportGui.__listening.push(...listeners.splice(0, Infinity))
+  }
+  size()
+})
 exportGui
   .add(settings, 'subsampling', 0.01, 10, 0.01)
   .onChange(() => size())
@@ -1490,3 +1502,5 @@ renderer.setAnimationLoop(() => {
     renderer.render(scene, camera)
   }
 })
+
+window.gui = gui
